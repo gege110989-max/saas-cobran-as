@@ -1,41 +1,54 @@
 
+import { supabase } from './supabase';
+import { authService } from './auth';
 import { AILog } from "../types";
 
-const AI_LOGS_KEY = 'movicobranca_ai_logs';
-
-// Seed data
-const SEED_AI_LOGS: AILog[] = [
-    { id: 'ai_1', timestamp: '2024-10-27 14:30:05', companyName: 'Tech Solutions Ltda', action: 'Classificação', tokensUsed: 156, status: 'success', model: 'gemini-3-pro-preview', latencyMs: 1200 },
-    { id: 'ai_2', timestamp: '2024-10-27 14:28:12', companyName: 'Advocacia Santos', action: 'Geração de Resposta', tokensUsed: 420, status: 'success', model: 'gemini-3-pro-preview', latencyMs: 2100 },
-    { id: 'ai_3', timestamp: '2024-10-27 14:15:00', companyName: 'Mercado Express', action: 'Classificação', tokensUsed: 0, status: 'rate_limit', model: 'gemini-3-pro-preview', latencyMs: 150 },
-    { id: 'ai_4', timestamp: '2024-10-27 14:10:22', companyName: 'Consultoria Digital', action: 'Melhoria de Texto', tokensUsed: 890, status: 'success', model: 'gemini-3-pro-preview', latencyMs: 3400 },
-    { id: 'ai_5', timestamp: '2024-10-27 13:55:40', companyName: 'Tech Solutions Ltda', action: 'Geração de Resposta', tokensUsed: 350, status: 'failed', model: 'gemini-3-pro-preview', latencyMs: 5000 },
-];
-
 export const getAILogs = async (): Promise<AILog[]> => {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 800));
+    const companyId = await authService.getCompanyId();
+    if (!companyId) return [];
 
-    const stored = localStorage.getItem(AI_LOGS_KEY);
-    if (stored) {
-        return JSON.parse(stored);
+    const { data, error } = await supabase
+        .from('ai_logs')
+        .select(`
+            *,
+            company:companies(name)
+        `)
+        .eq('company_id', companyId)
+        .order('timestamp', { ascending: false })
+        .limit(100);
+
+    if (error) {
+        console.error("Error fetching AI logs:", error);
+        return [];
     }
 
-    localStorage.setItem(AI_LOGS_KEY, JSON.stringify(SEED_AI_LOGS));
-    return SEED_AI_LOGS;
+    return data.map((l: any) => ({
+        id: l.id,
+        timestamp: new Date(l.timestamp).toLocaleString(),
+        companyName: l.company?.name || 'Unknown',
+        action: l.action,
+        tokensUsed: l.tokens_used,
+        status: l.status,
+        model: l.model,
+        latencyMs: l.latency_ms
+    }));
 };
 
-// Function to simulate adding a log (to be used when testing actual AI)
-export const logAIActivity = (log: Omit<AILog, 'id' | 'timestamp'>) => {
-    const newLog: AILog = {
-        ...log,
-        id: `ai_${Date.now()}`,
-        timestamp: new Date().toLocaleString()
-    };
-    
-    const stored = localStorage.getItem(AI_LOGS_KEY);
-    const logs: AILog[] = stored ? JSON.parse(stored) : SEED_AI_LOGS;
-    const updatedLogs = [newLog, ...logs].slice(0, 100); // Keep last 100
-    
-    localStorage.setItem(AI_LOGS_KEY, JSON.stringify(updatedLogs));
+export const logAIActivity = async (log: Omit<AILog, 'id' | 'timestamp' | 'companyName'>) => {
+    const companyId = await authService.getCompanyId();
+    if (!companyId) return;
+
+    const { error } = await supabase
+        .from('ai_logs')
+        .insert([{
+            company_id: companyId,
+            action: log.action,
+            model: log.model,
+            tokens_used: log.tokensUsed,
+            status: log.status,
+            latency_ms: log.latencyMs,
+            timestamp: new Date().toISOString()
+        }]);
+
+    if (error) console.error("Error saving AI log:", error);
 };

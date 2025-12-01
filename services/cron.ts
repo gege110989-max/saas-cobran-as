@@ -1,70 +1,81 @@
 
+import { supabase } from './supabase';
+import { authService } from './auth';
 import { CronLog } from "../types";
 
-const CRON_LOGS_KEY = 'movicobranca_cron_logs';
-
-// Initial seed data to show history
-const SEED_LOGS: CronLog[] = [
-    { id: 'job_1', executionTime: new Date(Date.now() - 86400000).toLocaleString(), type: 'daily_billing', status: 'success', processed: 1240, errors: 0, durationMs: 4500 },
-    { id: 'job_2', executionTime: new Date(Date.now() - 172800000).toLocaleString(), type: 'daily_billing', status: 'success', processed: 1180, errors: 2, durationMs: 4200 },
-    { id: 'job_3', executionTime: new Date(Date.now() - 259200000).toLocaleString(), type: 'daily_billing', status: 'warning', processed: 1150, errors: 15, durationMs: 5100 },
-];
-
 export const getCronLogs = async (): Promise<CronLog[]> => {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 600));
+    const companyId = await authService.getCompanyId();
+    
+    let query = supabase
+        .from('cron_logs')
+        .select('*')
+        .order('execution_time', { ascending: false })
+        .limit(50);
 
-    const stored = localStorage.getItem(CRON_LOGS_KEY);
-    if (stored) {
-        return JSON.parse(stored);
+    if (companyId) {
+        query = query.eq('company_id', companyId);
     }
 
-    localStorage.setItem(CRON_LOGS_KEY, JSON.stringify(SEED_LOGS));
-    return SEED_LOGS;
+    const { data, error } = await query;
+
+    if (error) {
+        console.error("Error fetching cron logs:", error);
+        return [];
+    }
+
+    return data.map((l: any) => ({
+        id: l.id,
+        executionTime: new Date(l.execution_time).toLocaleString(),
+        type: l.type,
+        status: l.status,
+        processed: l.processed,
+        errors: l.errors,
+        durationMs: l.duration_ms
+    }));
 };
 
 export const triggerCronJob = async (): Promise<CronLog> => {
-    // Simulate processing time (2-4 seconds)
-    const processingTime = Math.floor(Math.random() * 2000) + 2000;
-    await new Promise(resolve => setTimeout(resolve, processingTime));
+    const startTime = Date.now();
+    
+    // Invoca a função REAL de backend
+    const { data, error } = await supabase.functions.invoke('sync-asaas-periodic', {
+        method: 'POST'
+    });
 
-    // Simulate results
-    const totalItems = Math.floor(Math.random() * 500) + 1000;
-    const errorChance = Math.random();
-    let errors = 0;
-    let status: 'success' | 'warning' | 'failed' = 'success';
+    const duration = Date.now() - startTime;
+    const companyId = await authService.getCompanyId();
 
-    if (errorChance > 0.8) {
-        errors = Math.floor(Math.random() * 20);
-        status = 'warning';
-    } else if (errorChance > 0.95) {
-        errors = Math.floor(Math.random() * 100);
-        status = 'failed';
+    if (error) {
+        // Log de erro no banco
+        await supabase.from('cron_logs').insert([{
+            company_id: companyId,
+            type: 'manual_trigger',
+            status: 'failed',
+            processed: 0,
+            errors: 1,
+            duration_ms: duration,
+            execution_time: new Date().toISOString()
+        }]);
+        throw error;
     }
 
-    const newLog: CronLog = {
-        id: `job_${Date.now()}`,
+    // O log de sucesso já é criado pela própria edge function geralmente,
+    // mas se quisermos feedback imediato na UI retornamos o objeto aqui.
+    return {
+        id: `manual_${Date.now()}`,
         executionTime: new Date().toLocaleString(),
         type: 'manual_trigger',
-        status: status,
-        processed: totalItems,
-        errors: errors,
-        durationMs: processingTime
+        status: 'success',
+        processed: data?.processed_companies || 1,
+        errors: 0,
+        durationMs: duration
     };
-
-    // Save to storage
-    const stored = localStorage.getItem(CRON_LOGS_KEY);
-    const logs: CronLog[] = stored ? JSON.parse(stored) : SEED_LOGS;
-    const updatedLogs = [newLog, ...logs].slice(0, 50); // Keep only last 50
-    localStorage.setItem(CRON_LOGS_KEY, JSON.stringify(updatedLogs));
-
-    return newLog;
 };
 
 export const getNextCronRun = (): string => {
     const now = new Date();
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(9, 0, 0, 0); // Default 09:00
+    tomorrow.setHours(9, 0, 0, 0); 
     return tomorrow.toLocaleString();
 };

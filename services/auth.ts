@@ -53,7 +53,7 @@ export const authService = {
   },
 
   // Sign Up: Tenta criar tudo. Se falhar por falta de sessão (email confirm), avisa.
-  signUp: async (name: string, companyName: string, email: string, password: string) => {
+  signUp: async (name: string, companyName: string, email: string, password: string, logoUrl?: string) => {
     // 1. Create Auth User
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -85,7 +85,13 @@ export const authService = {
         const { data: companyData, error: companyError } = await supabase
         .from('companies')
         .insert([
-            { name: companyName, plan: 'free', status: 'active', owner_id: userId }
+            { 
+                name: companyName, 
+                plan: 'free', 
+                status: 'active', 
+                owner_id: userId,
+                logo_url: logoUrl || null
+            }
         ])
         .select()
         .single();
@@ -124,7 +130,10 @@ export const authService = {
       password,
     });
 
-    if (error) throw error;
+    if (error) {
+        console.error("Supabase Sign In Error:", error.message);
+        throw error;
+    }
 
     // Verificar se o onboarding foi concluído
     if (data.user) {
@@ -142,8 +151,12 @@ export const authService = {
   // Sign Out
   signOut: async () => {
     const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    // Limpeza profunda de storage
     localStorage.removeItem('movicobranca_session');
+    localStorage.removeItem('movicobranca_admin_auth');
+    localStorage.removeItem('sb-igfdxsnnlliuxrghhxma-auth-token'); // Limpa token específico do projeto se soubermos a chave
+    
+    if (error) throw error;
   },
 
   // Get Current User Profile & Company ID

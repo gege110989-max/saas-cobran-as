@@ -1,102 +1,236 @@
-import React from 'react';
-import { CreditCard, Check, Sparkles, AlertTriangle } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { CreditCard, Check, Sparkles, AlertTriangle, Shield, Zap, Building2, Loader2, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { stripeService } from '../services/stripe';
+
+const PlanCard = ({ title, price, features, current, recommended, onSubscribe, loading }: any) => {
+    const isRecommended = recommended && !current;
+    
+    return (
+    <div className={`relative p-8 rounded-3xl border flex flex-col h-full transition-all duration-300 ${
+        current 
+            ? 'border-emerald-500 bg-emerald-50/30 ring-2 ring-emerald-500 shadow-xl' 
+            : isRecommended 
+                ? 'border-indigo-500 bg-white shadow-2xl scale-105 z-10 ring-1 ring-indigo-100' 
+                : 'border-slate-200 bg-white shadow-sm hover:shadow-xl hover:-translate-y-1'
+    }`}>
+        {isRecommended && (
+            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-6 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest shadow-lg flex items-center gap-1 ring-4 ring-white">
+                <Sparkles className="w-3 h-3 fill-current" /> Recomendado
+            </div>
+        )}
+        
+        {current && (
+            <div className="absolute top-0 right-0 p-5">
+                <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 border border-emerald-200 shadow-sm">
+                    <Check className="w-3 h-3" /> Plano Atual
+                </span>
+            </div>
+        )}
+
+        <div className="mb-8 mt-2">
+            <h3 className={`text-lg font-bold uppercase tracking-wide mb-4 ${
+                current ? 'text-emerald-700' : isRecommended ? 'text-indigo-600' : 'text-slate-500'
+            }`}>{title}</h3>
+            
+            <div className="flex items-baseline text-slate-900">
+                <span className="text-5xl font-extrabold tracking-tight">R$ {price}</span>
+                <span className="ml-2 text-lg font-medium text-slate-400">/mês</span>
+            </div>
+            <p className="mt-4 text-sm text-slate-500 leading-relaxed min-h-[40px]">
+                {price === "0" 
+                    ? "Para quem está começando a organizar as cobranças." 
+                    : title === "Pro" 
+                        ? "O favorito para empresas em crescimento acelerado." 
+                        : "Potência máxima e suporte dedicado para grandes operações."}
+            </p>
+        </div>
+
+        <div className="flex-1 mb-8">
+            <div className="h-px bg-slate-100 mb-6"></div>
+            <ul className="space-y-4">
+                {features.map((feature: string, idx: number) => (
+                    <li key={idx} className="flex items-start">
+                        <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${
+                            current ? 'bg-emerald-100 text-emerald-600' : isRecommended ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                            <Check className="h-3.5 w-3.5" />
+                        </div>
+                        <p className="ml-3 text-sm text-slate-600 font-medium">{feature}</p>
+                    </li>
+                ))}
+            </ul>
+        </div>
+
+        <button 
+            onClick={onSubscribe}
+            disabled={current || loading}
+            className={`w-full py-4 px-6 rounded-xl text-sm font-bold transition-all shadow-md flex items-center justify-center gap-2 group ${
+                current 
+                    ? 'bg-white border-2 border-emerald-500 text-emerald-600 cursor-default opacity-100'
+                    : isRecommended
+                        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:to-indigo-700 text-white hover:shadow-xl hover:scale-[1.02]'
+                        : 'bg-slate-900 hover:bg-slate-800 text-white hover:shadow-lg'
+            }`}
+        >
+            {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+            ) : current ? (
+                <>Plano Ativo <CheckCircle2 className="w-5 h-5" /></>
+            ) : (
+                <>Assinar Agora <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></>
+            )}
+        </button>
+    </div>
+)};
 
 const Subscription = () => {
+  const [currentPlan, setCurrentPlan] = useState<string>('free');
+  const [loading, setLoading] = useState(true);
+  const [processingPlan, setProcessingPlan] = useState<string | null>(null);
+
+  useEffect(() => {
+      loadSubscription();
+  }, []);
+
+  const loadSubscription = async () => {
+      try {
+          const sub = await stripeService.getCurrentSubscription();
+          if (sub) setCurrentPlan(sub.plan);
+      } catch (error) {
+          console.error("Erro ao carregar plano", error);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  const handleSubscribe = async (plan: 'pro' | 'enterprise') => {
+      setProcessingPlan(plan);
+      try {
+          await stripeService.createCheckoutSession(plan);
+      } catch (error) {
+          alert("Erro ao processar pagamento.");
+      } finally {
+          setProcessingPlan(null);
+      }
+  };
+
+  const handleManage = async () => {
+      setProcessingPlan('manage');
+      await stripeService.createPortalSession();
+      setProcessingPlan(null);
+  };
+
+  if (loading) {
+      return (
+          <div className="flex justify-center items-center h-96">
+              <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
+          </div>
+      );
+  }
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Assinatura</h2>
-        <p className="text-slate-500">Gerencie seu plano e método de pagamento do Movicobrança.</p>
+    <div className="max-w-6xl mx-auto space-y-10 pb-20">
+      <div className="text-center max-w-2xl mx-auto">
+        <h2 className="text-3xl font-bold text-slate-900">Escolha o plano ideal para sua empresa</h2>
+        <p className="text-slate-500 mt-4 text-lg">
+            Automatize suas cobranças e recupere receita com o poder da Inteligência Artificial.
+            Cancele a qualquer momento.
+        </p>
       </div>
 
-      <div className="bg-gradient-to-r from-brand-600 to-indigo-700 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full -mr-16 -mt-16"></div>
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-            <div>
-                <div className="flex items-center gap-2 mb-2">
-                    <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-sm">Plano Atual</span>
-                    <span className="text-brand-100 text-sm">Renova em 15/11/2024</span>
-                </div>
-                <h3 className="text-3xl font-bold mb-1">Empresa PRO</h3>
-                <p className="text-brand-100">Acesso total à IA Financeira e API ilimitada.</p>
-            </div>
-            <div className="text-right">
-                <p className="text-sm opacity-80 mb-1">Valor Mensal</p>
-                <h4 className="text-4xl font-bold">R$ 297<span className="text-xl font-normal opacity-80">,90</span></h4>
-            </div>
-        </div>
+      <div className="grid md:grid-cols-3 gap-8 px-4 items-start pt-8">
+          {/* FREE */}
+          <PlanCard 
+            title="Starter" 
+            price="0" 
+            current={currentPlan === 'free'}
+            features={[
+                'Até 50 clientes',
+                'Cobrança básica (E-mail)',
+                'Integração Asaas',
+                'Painel de Gestão',
+                'Sem automação de WhatsApp'
+            ]}
+            onSubscribe={() => {}} // Free is default
+            loading={false}
+          />
+
+          {/* PRO */}
+          <PlanCard 
+            title="Pro" 
+            price="297" 
+            current={currentPlan === 'pro'}
+            recommended={true}
+            features={[
+                'Clientes Ilimitados',
+                'Cobrança via WhatsApp Oficial',
+                'IA Financeira (Gemini)',
+                'Régua de Cobrança Automática',
+                'Dashboard Avançado',
+                'Suporte Prioritário'
+            ]}
+            onSubscribe={() => handleSubscribe('pro')}
+            loading={processingPlan === 'pro'}
+          />
+
+          {/* ENTERPRISE */}
+          <PlanCard 
+            title="Enterprise" 
+            price="899" 
+            current={currentPlan === 'enterprise'}
+            features={[
+                'Tudo do plano Pro',
+                'Múltiplos usuários (Equipe)',
+                'API Dedicada',
+                'Gerente de Contas',
+                'Treinamento de IA personalizado',
+                'SLA de 99.9%'
+            ]}
+            onSubscribe={() => handleSubscribe('enterprise')}
+            loading={processingPlan === 'enterprise'}
+          />
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-slate-400" />
-                  Método de Pagamento
-              </h3>
-              <div className="flex items-center gap-4 p-4 border border-slate-100 rounded-lg bg-slate-50">
-                  <div className="w-12 h-8 bg-slate-800 rounded flex items-center justify-center text-white font-bold text-xs">VISA</div>
-                  <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-900">•••• •••• •••• 4242</p>
-                      <p className="text-xs text-slate-500">Expira em 12/28</p>
-                  </div>
-                  <button className="text-sm text-brand-600 font-medium hover:underline">Alterar</button>
+      {currentPlan !== 'free' && (
+          <div className="bg-slate-900 rounded-2xl p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl mx-4 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 -translate-y-1/2 translate-x-1/2"></div>
+              <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 translate-y-1/2 -translate-x-1/2"></div>
+              
+              <div className="relative z-10">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                      <CreditCard className="w-6 h-6 text-indigo-400" />
+                      Gerenciar Assinatura
+                  </h3>
+                  <p className="text-slate-400 mt-2 max-w-lg">
+                      Acesse o portal do cliente seguro para baixar notas fiscais, trocar cartão de crédito ou alterar seu plano.
+                  </p>
+              </div>
+              <button 
+                onClick={handleManage}
+                disabled={!!processingPlan}
+                className="relative z-10 bg-white text-slate-900 px-6 py-3 rounded-xl font-bold hover:bg-slate-100 transition-colors shadow-lg flex items-center gap-2 disabled:opacity-70 group"
+              >
+                  {processingPlan === 'manage' ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Acessar Portal <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></>}
+              </button>
+          </div>
+      )}
+
+      <div className="border-t border-slate-200 pt-10 mx-4">
+          <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-500" />
+              Perguntas Frequentes
+          </h3>
+          <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <h4 className="font-bold text-slate-800 mb-2">Preciso pagar pelo WhatsApp a parte?</h4>
+                  <p className="text-sm text-slate-500 leading-relaxed">Não! A conexão com a API oficial está inclusa na tecnologia. Você paga apenas as taxas de conversação padrão da Meta (se houver) diretamente para eles, sem ágio.</p>
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <h4 className="font-bold text-slate-800 mb-2">Como funciona a garantia?</h4>
+                  <p className="text-sm text-slate-500 leading-relaxed">Oferecemos 7 dias de garantia incondicional. Se não gostar, devolvemos seu dinheiro sem perguntas. Basta cancelar no portal.</p>
               </div>
           </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-               <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-amber-400" />
-                  Consumo do Plano
-              </h3>
-              <div className="space-y-4">
-                  <div>
-                      <div className="flex justify-between text-sm mb-1">
-                          <span className="text-slate-600">Mensagens enviadas</span>
-                          <span className="font-medium text-slate-900">4.520 / 10.000</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2">
-                          <div className="bg-brand-500 h-2 rounded-full" style={{ width: '45%' }}></div>
-                      </div>
-                  </div>
-                  <div>
-                      <div className="flex justify-between text-sm mb-1">
-                          <span className="text-slate-600">Contatos Sincronizados</span>
-                          <span className="font-medium text-slate-900">1.240 / Ilimitado</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2">
-                          <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '10%' }}></div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      </div>
-
-      <div className="border-t border-slate-200 pt-6">
-          <h3 className="font-bold text-slate-900 mb-4">Histórico de Faturas</h3>
-          <table className="w-full text-sm text-left">
-              <thead className="text-slate-500 bg-slate-50 uppercase text-xs">
-                  <tr>
-                      <th className="px-4 py-3 rounded-l-lg">Data</th>
-                      <th className="px-4 py-3">Valor</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 rounded-r-lg text-right">PDF</th>
-                  </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                  <tr>
-                      <td className="px-4 py-3">15 Out 2024</td>
-                      <td className="px-4 py-3">R$ 297,90</td>
-                      <td className="px-4 py-3"><span className="text-emerald-600 font-medium">Pago</span></td>
-                      <td className="px-4 py-3 text-right"><button className="text-brand-600 hover:underline">Baixar</button></td>
-                  </tr>
-                  <tr>
-                      <td className="px-4 py-3">15 Set 2024</td>
-                      <td className="px-4 py-3">R$ 297,90</td>
-                      <td className="px-4 py-3"><span className="text-emerald-600 font-medium">Pago</span></td>
-                      <td className="px-4 py-3 text-right"><button className="text-brand-600 hover:underline">Baixar</button></td>
-                  </tr>
-              </tbody>
-          </table>
       </div>
     </div>
   );

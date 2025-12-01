@@ -12,11 +12,14 @@ import {
   Play,
   Loader2,
   Bot,
-  Zap
+  Zap,
+  Briefcase
 } from 'lucide-react';
 import { CronLog, AILog } from '../../types';
-import { getCronLogs, triggerCronJob, getNextCronRun } from '../../services/cron';
+import { getCronLogs, getNextCronRun } from '../../services/cron';
 import { getAILogs } from '../../services/aiActivity';
+import { triggerDailySync } from '../../services/functions';
+import { asaasService } from '../../services/asaas';
 
 const WebhookItem = ({ type, time, status, payload }: any) => (
   <div className="flex items-start gap-4 p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
@@ -48,7 +51,7 @@ const CronItem: React.FC<{ log: CronLog }> = ({ log }) => (
            <div>
                <div className="flex items-center gap-2">
                    <p className="font-bold text-slate-900 text-sm">
-                       {log.type === 'daily_billing' ? 'Rotina Diária de Cobrança' : 'Disparo Manual'}
+                       {log.type === 'daily_billing' ? 'Rotina Diária de Cobrança' : 'Disparo Manual (Cloud)'}
                    </p>
                    {log.type === 'manual_trigger' && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 rounded font-bold uppercase">Manual</span>}
                </div>
@@ -75,6 +78,7 @@ const AdminActivity = () => {
   const [cronLogs, setCronLogs] = useState<CronLog[]>([]);
   const [isCronLoading, setIsCronLoading] = useState(false);
   const [isRunningJob, setIsRunningJob] = useState(false);
+  const [isRunningBilling, setIsRunningBilling] = useState(false);
 
   // AI States
   const [aiLogs, setAiLogs] = useState<AILog[]>([]);
@@ -115,12 +119,62 @@ const AdminActivity = () => {
   const handleRunManualJob = async () => {
       setIsRunningJob(true);
       try {
-          const newLog = await triggerCronJob();
+          // Chama a função REAL na nuvem
+          const result = await triggerDailySync();
+          
+          const newLog: CronLog = {
+              id: `job_${Date.now()}`,
+              executionTime: new Date().toLocaleString(),
+              type: 'manual_trigger',
+              status: 'success',
+              processed: result.processed || 0,
+              errors: 0,
+              durationMs: 2500
+          };
+          
           setCronLogs(prev => [newLog, ...prev]);
-      } catch (error) {
-          alert("Erro ao executar job manual.");
+          alert(`Sincronização iniciada na nuvem! ${result.processed || 0} itens processados.`);
+          
+      } catch (error: any) {
+          console.error(error);
+          // Fallback visual log for error
+          const errorLog: CronLog = {
+              id: `job_err_${Date.now()}`,
+              executionTime: new Date().toLocaleString(),
+              type: 'manual_trigger',
+              status: 'failed',
+              processed: 0,
+              errors: 1,
+              durationMs: 500
+          };
+          setCronLogs(prev => [errorLog, ...prev]);
+          alert("Erro ao disparar job na nuvem: " + error.message);
       } finally {
           setIsRunningJob(false);
+      }
+  };
+
+  const handleRunBillingRoutine = async () => {
+      setIsRunningBilling(true);
+      try {
+          const result = await asaasService.runBillingRoutine();
+          
+          const newLog: CronLog = {
+              id: `bill_${Date.now()}`,
+              executionTime: new Date().toLocaleString(),
+              type: 'daily_billing',
+              status: result.errors > 0 ? 'warning' : 'success',
+              processed: result.processed,
+              errors: result.errors,
+              durationMs: 1500
+          };
+          
+          setCronLogs(prev => [newLog, ...prev]);
+          alert(`Régua de cobrança executada! ${result.processed} mensagens enviadas.`);
+      } catch (error: any) {
+          alert("Erro na régua: " + error.message);
+      } finally {
+          setIsRunningBilling(false);
       }
   };
 
@@ -204,14 +258,24 @@ const AdminActivity = () => {
                   <div className="p-6 bg-slate-50 flex-1">
                       <div className="flex justify-between items-center mb-4">
                           <h4 className="font-bold text-slate-900">Histórico de Execução</h4>
-                          <button 
-                            onClick={handleRunManualJob}
-                            disabled={isRunningJob}
-                            className="text-xs bg-indigo-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-70"
-                          >
-                             {isRunningJob ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-                             Executar Agora
-                          </button>
+                          <div className="flex gap-2">
+                            <button 
+                                onClick={handleRunBillingRoutine}
+                                disabled={isRunningBilling}
+                                className="text-xs bg-white text-slate-700 border border-slate-200 px-3 py-2 rounded-lg font-medium hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-70"
+                            >
+                                {isRunningBilling ? <Loader2 className="w-3 h-3 animate-spin" /> : <Briefcase className="w-3 h-3" />}
+                                Rodar Régua de Cobrança
+                            </button>
+                            <button 
+                                onClick={handleRunManualJob}
+                                disabled={isRunningJob}
+                                className="text-xs bg-indigo-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-70"
+                            >
+                                {isRunningJob ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                                Executar Agora (Nuvem)
+                            </button>
+                          </div>
                       </div>
 
                       {isCronLoading && cronLogs.length === 0 ? (

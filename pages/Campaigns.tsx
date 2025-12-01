@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
     Megaphone, 
@@ -21,7 +22,8 @@ import {
     Wand2,
     Bot,
     Lightbulb,
-    PauseCircle
+    PauseCircle,
+    Filter
 } from 'lucide-react';
 import { Campaign } from '../types';
 import { getCampaigns, createCampaign, updateCampaignStatus, deleteCampaign } from '../services/campaigns';
@@ -188,6 +190,7 @@ const Campaigns = () => {
     
     // Action States
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+    const [statusFilter, setStatusFilter] = useState('all');
 
     // AI States
     const [isImproving, setIsImproving] = useState(false);
@@ -424,6 +427,13 @@ const Campaigns = () => {
         else if (filter === 'whatsapp') setEstimatedAudience(320);
     };
 
+    // Filter Logic
+    const filteredCampaigns = campaigns.filter(c => {
+        if (statusFilter === 'all') return true;
+        if (statusFilter === 'active') return ['sending', 'paused', 'scheduled'].includes(c.status);
+        return c.status === statusFilter;
+    });
+
     return (
         <div className="space-y-6 max-w-6xl mx-auto pb-20 relative">
             {/* AI Assistant Modal */}
@@ -516,6 +526,28 @@ const Campaigns = () => {
                         </div>
                     </div>
 
+                    {/* Filter Bar */}
+                    <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                        {[
+                            { id: 'all', label: 'Todas' },
+                            { id: 'active', label: 'Em Andamento' },
+                            { id: 'completed', label: 'Concluídas' },
+                            { id: 'draft', label: 'Rascunhos' }
+                        ].map(filter => (
+                            <button
+                                key={filter.id}
+                                onClick={() => setStatusFilter(filter.id)}
+                                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide transition-colors whitespace-nowrap ${
+                                    statusFilter === filter.id 
+                                    ? 'bg-slate-900 text-white shadow-md' 
+                                    : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-200'
+                                }`}
+                            >
+                                {filter.label}
+                            </button>
+                        ))}
+                    </div>
+
                     {/* Campaign List */}
                     {loading ? (
                         <div className="flex justify-center py-20">
@@ -523,14 +555,14 @@ const Campaigns = () => {
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {campaigns.length === 0 ? (
+                            {filteredCampaigns.length === 0 ? (
                                 <div className="col-span-full py-16 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                                     <Megaphone className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                    <p className="text-lg font-medium">Nenhuma campanha criada</p>
-                                    <p className="text-sm">Comece criando sua primeira campanha de marketing.</p>
+                                    <p className="text-lg font-medium">Nenhuma campanha encontrada</p>
+                                    <p className="text-sm">Tente ajustar os filtros ou crie uma nova campanha.</p>
                                 </div>
                             ) : (
-                                campaigns.map(camp => (
+                                filteredCampaigns.map(camp => (
                                     <CampaignCard 
                                         key={camp.id} 
                                         campaign={camp} 

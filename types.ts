@@ -8,6 +8,8 @@ export interface Contact {
   status: 'active' | 'blocked' | 'overdue' | 'paid';
   lastMessageAt: string;
   source: 'asaas' | 'whatsapp' | 'manual';
+  totalPaid?: number;
+  openInvoices?: number;
 }
 
 export interface Message {
@@ -50,12 +52,33 @@ export interface AsaasConfig {
   apiKey: string;
   sandboxKey: string;
   mode: 'production' | 'sandbox';
+  autoSync?: boolean;
+  syncTime?: string; // Format "HH:mm"
+}
+
+export interface AsaasInvoice {
+  id: string;
+  customer: string; // ID do cliente no Asaas
+  value: number;
+  netValue?: number;
+  status: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED';
+  dueDate: string;
+  invoiceUrl: string; // Link da fatura
+  bankSlipUrl?: string; // Link do PDF do boleto
+  pixQrCodeId?: string;
+  identificationField?: string; // Linha digitável
+  description?: string;
 }
 
 export interface BillingConfig {
   daysBefore: number;
+  enableDaysBefore: boolean;
   sendOnDueDate: boolean;
-  daysAfter: string; // "1,3,7"
+  
+  // Alterado: Em vez de dias corridos, usamos dias da semana (0-6)
+  recoveryScheduledDays: number[]; // Ex: [1, 3] = Segunda e Quarta
+  enableDaysAfter: boolean;
+  
   dailyCronTime: string; // "09:00"
 }
 
@@ -88,6 +111,7 @@ export interface Company {
   name: string;
   ownerName: string;
   email: string;
+  logoUrl?: string; // Novo campo para Logomarca
   plan: 'free' | 'pro' | 'enterprise';
   status: 'active' | 'suspended' | 'trial';
   mrr: number;
@@ -156,9 +180,11 @@ export interface AsaasWebhookPayload {
   payment: {
     id: string;
     customer: string;
+    customerEmail?: string;
     value: number;
     billingType: string;
   };
+  customerEmail?: string; 
 }
 
 export interface WhatsAppWebhookPayload {

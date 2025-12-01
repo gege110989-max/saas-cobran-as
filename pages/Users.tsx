@@ -16,19 +16,62 @@ import {
   ShieldAlert,
   ChevronLeft,
   ChevronRight,
-  Loader2
+  Loader2,
+  CheckSquare,
+  Square,
+  Power
 } from 'lucide-react';
 import { CompanyUser } from '../types';
 import { teamService } from '../services/team';
 
 const ITEMS_PER_PAGE = 5;
-// Mock ID do usuário logado para evitar auto-delete (num app real viria do Auth Context)
+// Mock ID do usuário logado para evitar auto-delete
 const CURRENT_USER_MOCK_ID = 'user_logged_in_id'; 
+
+// Components defined outside to prevent re-renders
+const Backdrop = ({ onClick }: { onClick: () => void }) => (
+  <div 
+    className="fixed inset-0 z-10 bg-transparent"
+    onClick={onClick}
+  />
+);
+
+const UserSkeleton = () => (
+  <tr className="animate-pulse border-b border-slate-50 last:border-0">
+    <td className="px-6 py-4 w-4">
+       <div className="w-5 h-5 bg-slate-200 rounded"></div>
+    </td>
+    <td className="px-6 py-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-slate-200"></div>
+        <div className="space-y-2">
+          <div className="h-4 w-32 bg-slate-200 rounded"></div>
+          <div className="h-3 w-48 bg-slate-100 rounded"></div>
+        </div>
+      </div>
+    </td>
+    <td className="px-6 py-4">
+      <div className="h-6 w-24 bg-slate-200 rounded-full"></div>
+    </td>
+    <td className="px-6 py-4">
+      <div className="h-6 w-20 bg-slate-200 rounded-full"></div>
+    </td>
+    <td className="px-6 py-4">
+      <div className="h-4 w-24 bg-slate-200 rounded"></div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="h-8 w-8 bg-slate-200 rounded ml-auto"></div>
+    </td>
+  </tr>
+);
 
 const UsersPage = () => {
   const [users, setUsers] = useState<CompanyUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  
+  // Selection State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -42,9 +85,10 @@ const UsersPage = () => {
   
   const [confirmationModal, setConfirmationModal] = useState<{
     isOpen: boolean;
-    type: 'activate' | 'deactivate' | 'revoke' | 'change_role' | 'delete';
-    userId: string;
-    userName: string;
+    type: 'activate' | 'deactivate' | 'revoke' | 'change_role' | 'delete' | 'bulk_delete';
+    userId?: string;
+    userName?: string;
+    count?: number; // for bulk
     newRole?: 'owner' | 'member';
   } | null>(null);
 
@@ -77,6 +121,23 @@ const UsersPage = () => {
     }
   };
 
+  // Selection Logic
+  const toggleSelectAll = () => {
+    if (selectedIds.length === users.length && users.length > 0) {
+        setSelectedIds([]);
+    } else {
+        setSelectedIds(users.map(u => u.id));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    if (selectedIds.includes(id)) {
+        setSelectedIds(selectedIds.filter(sid => sid !== id));
+    } else {
+        setSelectedIds([...selectedIds, id]);
+    }
+  };
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -90,6 +151,7 @@ const UsersPage = () => {
     }
   };
 
+  // Action Requests
   const requestChangeRole = (userId: string, userName: string, newRole: 'owner' | 'member') => {
     setOpenMenuId(null);
     setConfirmationModal({
@@ -121,21 +183,55 @@ const UsersPage = () => {
     });
   };
 
+  const requestToggleStatus = (user: CompanyUser) => {
+      setOpenMenuId(null);
+      const newType = user.status === 'active' ? 'deactivate' : 'activate';
+      setConfirmationModal({
+          isOpen: true,
+          type: newType,
+          userId: user.id,
+          userName: user.name
+      });
+  };
+
+  const handleBulkDelete = () => {
+      if (selectedIds.length === 0) return;
+      setConfirmationModal({
+          isOpen: true,
+          type: 'bulk_delete',
+          count: selectedIds.length
+      });
+  };
+
   const confirmAction = async () => {
     if (!confirmationModal) return;
 
     try {
         if (confirmationModal.type === 'revoke' || confirmationModal.type === 'delete') {
-            await teamService.removeMember(confirmationModal.userId);
+            await teamService.removeMember(confirmationModal.userId!);
             setUsers(users.filter(u => u.id !== confirmationModal.userId));
             showToast(confirmationModal.type === 'revoke' ? 'Convite cancelado.' : 'Usuário removido da equipe.');
         } 
+        else if (confirmationModal.type === 'bulk_delete') {
+            await teamService.bulkRemoveMembers(selectedIds);
+            setUsers(users.filter(u => !selectedIds.includes(u.id)));
+            setSelectedIds([]);
+            showToast(`${confirmationModal.count} usuários removidos.`);
+        }
         else if (confirmationModal.type === 'change_role' && confirmationModal.newRole) {
-            await teamService.updateRole(confirmationModal.userId, confirmationModal.newRole);
+            await teamService.updateRole(confirmationModal.userId!, confirmationModal.newRole);
             setUsers(users.map(user => 
                 user.id === confirmationModal.userId ? { ...user, role: confirmationModal.newRole! } : user
             ));
             showToast(`Função atualizada com sucesso.`);
+        }
+        else if (confirmationModal.type === 'activate' || confirmationModal.type === 'deactivate') {
+            const newStatus = confirmationModal.type === 'activate' ? 'active' : 'inactive';
+            await teamService.updateStatus(confirmationModal.userId!, newStatus);
+            setUsers(users.map(user => 
+                user.id === confirmationModal.userId ? { ...user, status: newStatus } : user
+            ));
+            showToast(`Usuário ${newStatus === 'active' ? 'ativado' : 'desativado'} com sucesso.`);
         }
     } catch (error) {
         console.error(error);
@@ -170,43 +266,9 @@ const UsersPage = () => {
     showToast(`Convite reenviado para ${user.email}`);
   };
 
-  // Close menu when clicking outside
-  const Backdrop = () => (
-    <div 
-      className="fixed inset-0 z-10 bg-transparent"
-      onClick={() => setOpenMenuId(null)}
-    />
-  );
-
-  const UserSkeleton = () => (
-    <tr className="animate-pulse border-b border-slate-50 last:border-0">
-      <td className="px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-slate-200"></div>
-          <div className="space-y-2">
-            <div className="h-4 w-32 bg-slate-200 rounded"></div>
-            <div className="h-3 w-48 bg-slate-100 rounded"></div>
-          </div>
-        </div>
-      </td>
-      <td className="px-6 py-4">
-        <div className="h-6 w-24 bg-slate-200 rounded-full"></div>
-      </td>
-      <td className="px-6 py-4">
-        <div className="h-6 w-20 bg-slate-200 rounded-full"></div>
-      </td>
-      <td className="px-6 py-4">
-        <div className="h-4 w-24 bg-slate-200 rounded"></div>
-      </td>
-      <td className="px-6 py-4 text-right">
-        <div className="h-8 w-8 bg-slate-200 rounded ml-auto"></div>
-      </td>
-    </tr>
-  );
-
   return (
     <div className="max-w-6xl mx-auto space-y-6 relative pb-10">
-      {openMenuId && <Backdrop />}
+      {openMenuId && <Backdrop onClick={() => setOpenMenuId(null)} />}
       
       {/* Invite User Modal */}
       {isInviteModalOpen && (
@@ -305,32 +367,46 @@ const UsersPage = () => {
           >
             <div className="flex items-start gap-4">
               <div className={`p-3 rounded-full flex-shrink-0 ${
-                  confirmationModal.type === 'delete' || confirmationModal.type === 'revoke' 
+                  confirmationModal.type === 'delete' || confirmationModal.type === 'revoke' || confirmationModal.type === 'bulk_delete'
                   ? 'bg-rose-100 text-rose-600' 
-                  : confirmationModal.type === 'change_role'
-                    ? 'bg-indigo-100 text-indigo-600'
-                    : 'bg-emerald-100 text-emerald-600'
-              }`}>
-                {confirmationModal.type === 'delete' || confirmationModal.type === 'revoke' 
-                    ? <UserX className="w-6 h-6" /> 
+                  : confirmationModal.type === 'deactivate'
+                    ? 'bg-amber-100 text-amber-600'
                     : confirmationModal.type === 'change_role'
-                      ? <ShieldAlert className="w-6 h-6" />
-                      : <UserCheck className="w-6 h-6" />
+                      ? 'bg-indigo-100 text-indigo-600'
+                      : 'bg-emerald-100 text-emerald-600'
+              }`}>
+                {confirmationModal.type === 'delete' || confirmationModal.type === 'revoke' || confirmationModal.type === 'bulk_delete'
+                    ? <UserX className="w-6 h-6" /> 
+                    : confirmationModal.type === 'deactivate'
+                        ? <Ban className="w-6 h-6" />
+                        : confirmationModal.type === 'change_role'
+                          ? <ShieldAlert className="w-6 h-6" />
+                          : <UserCheck className="w-6 h-6" />
                 }
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-slate-900">
-                  {confirmationModal.type === 'delete' ? 'Remover Usuário' 
+                  {confirmationModal.type === 'delete' || confirmationModal.type === 'bulk_delete' ? 'Remover Usuário(s)' 
                    : confirmationModal.type === 'revoke' ? 'Cancelar Convite'
                    : confirmationModal.type === 'change_role' ? 'Alterar Permissão'
-                   : 'Confirmar Ação'}
+                   : confirmationModal.type === 'deactivate' ? 'Desativar Conta'
+                   : 'Ativar Conta'}
                 </h3>
                 <div className="text-slate-500 mt-2 text-sm leading-relaxed">
                   {confirmationModal.type === 'delete' && (
                     <p>Tem certeza que deseja <strong>remover permanentemente</strong> o usuário <strong>{confirmationModal.userName}</strong>? Ele perderá acesso imediato.</p>
                   )}
+                  {confirmationModal.type === 'bulk_delete' && (
+                    <p>Tem certeza que deseja <strong>remover permanentemente {confirmationModal.count} usuários</strong> selecionados?</p>
+                  )}
                   {confirmationModal.type === 'revoke' && (
                     <p>Tem certeza que deseja cancelar o convite para <strong>{confirmationModal.userName}</strong>? O link enviado será invalidado.</p>
+                  )}
+                  {confirmationModal.type === 'deactivate' && (
+                    <p>Deseja desativar o acesso de <strong>{confirmationModal.userName}</strong>? Ele não poderá mais fazer login.</p>
+                  )}
+                  {confirmationModal.type === 'activate' && (
+                    <p>Deseja reativar o acesso de <strong>{confirmationModal.userName}</strong>?</p>
                   )}
                   {confirmationModal.type === 'change_role' && (
                      <p>Deseja alterar o nível de acesso de <strong>{confirmationModal.userName}</strong> para <strong>{confirmationModal.newRole === 'owner' ? 'Administrador' : 'Membro'}</strong>?</p>
@@ -348,15 +424,19 @@ const UsersPage = () => {
               <button 
                 onClick={confirmAction}
                 className={`px-4 py-2 text-white rounded-lg font-medium shadow-sm transition-colors text-sm flex items-center gap-2 ${
-                  confirmationModal.type === 'delete' || confirmationModal.type === 'revoke'
+                  confirmationModal.type === 'delete' || confirmationModal.type === 'revoke' || confirmationModal.type === 'bulk_delete'
                   ? 'bg-rose-600 hover:bg-rose-700' 
-                  : confirmationModal.type === 'change_role'
-                    ? 'bg-indigo-600 hover:bg-indigo-700'
-                    : 'bg-emerald-600 hover:bg-emerald-700'
+                  : confirmationModal.type === 'deactivate'
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : confirmationModal.type === 'change_role'
+                      ? 'bg-indigo-600 hover:bg-indigo-700'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
               >
-                {confirmationModal.type === 'delete' ? 'Sim, remover' 
+                {confirmationModal.type === 'delete' || confirmationModal.type === 'bulk_delete' ? 'Sim, remover' 
                  : confirmationModal.type === 'revoke' ? 'Sim, cancelar'
+                 : confirmationModal.type === 'deactivate' ? 'Sim, desativar'
+                 : confirmationModal.type === 'activate' ? 'Sim, ativar'
                  : confirmationModal.type === 'change_role' ? 'Confirmar alteração'
                  : 'Confirmar'}
               </button>
@@ -388,14 +468,32 @@ const UsersPage = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-visible flex flex-col">
+        {/* Bulk Actions Bar */}
+        {selectedIds.length > 0 && (
+            <div className="bg-slate-900 text-white px-6 py-2 flex items-center justify-between animate-in slide-in-from-top-2 duration-200">
+                <span className="text-sm font-medium">{selectedIds.length} selecionados</span>
+                <button 
+                    onClick={handleBulkDelete} 
+                    className="px-3 py-1.5 text-xs font-medium bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg flex items-center gap-2"
+                >
+                    <Trash2 className="w-3 h-3" /> Excluir Selecionados
+                </button>
+            </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
               <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
+                      <th className="px-6 py-4 w-4">
+                          <button onClick={toggleSelectAll} className="text-slate-400">
+                              {selectedIds.length === users.length && users.length > 0 ? <CheckSquare className="w-5 h-5 text-brand-600" /> : <Square className="w-5 h-5" />}
+                          </button>
+                      </th>
                       <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Usuário</th>
                       <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Função</th>
                       <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Criado em</th>
+                      <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Último Acesso</th>
                       <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Ações</th>
                   </tr>
               </thead>
@@ -405,20 +503,28 @@ const UsersPage = () => {
                       <UserSkeleton />
                       <UserSkeleton />
                       <UserSkeleton />
+                      <UserSkeleton />
+                      <UserSkeleton />
                     </>
                   ) : users.length === 0 ? (
                       <tr>
-                          <td colSpan={5} className="px-6 py-10 text-center text-slate-500">Nenhum membro encontrado.</td>
+                          <td colSpan={6} className="px-6 py-10 text-center text-slate-500">Nenhum membro encontrado.</td>
                       </tr>
                   ) : (
                     currentUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
                           <td className="px-6 py-4">
+                              <button onClick={() => toggleSelect(user.id)} className="text-slate-400 hover:text-brand-600">
+                                  {selectedIds.includes(user.id) ? <CheckSquare className="w-5 h-5 text-brand-600" /> : <Square className="w-5 h-5 text-slate-300" />}
+                              </button>
+                          </td>
+                          <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
                                   <div className="relative">
                                     <img src={user.avatarUrl} alt={user.name} className={`w-10 h-10 rounded-full bg-slate-100 ${user.status === 'inactive' ? 'grayscale opacity-50' : ''}`} />
+                                    {/* Online Indicator */}
                                     {user.status === 'active' && (
-                                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
+                                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full ring-1 ring-emerald-50"></span>
                                     )}
                                   </div>
                                   <div>
@@ -493,12 +599,21 @@ const UsersPage = () => {
                                                       Rebaixar a Membro
                                                   </button>
                                               )}
+                                              
+                                              {/* Status Management (Active/Inactive) */}
+                                              <button 
+                                                  onClick={() => requestToggleStatus(user)}
+                                                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${user.status === 'active' ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                                              >
+                                                  <Power className="w-4 h-4" />
+                                                  {user.status === 'active' ? 'Desativar Conta' : 'Ativar Conta'}
+                                              </button>
                                           </>
                                       )}
 
                                       <div className="border-t border-slate-50 my-1"></div>
 
-                                      {/* Status Management */}
+                                      {/* Destructive Actions */}
                                       {user.status === 'invited' ? (
                                           <>
                                               <button 

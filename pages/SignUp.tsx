@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Wallet, Building2, User, Mail, Lock, CheckCircle2, Loader2, AlertCircle, Info } from 'lucide-react';
+import { Wallet, Building2, User, Mail, Lock, CheckCircle2, Loader2, AlertCircle, Info, Image as ImageIcon } from 'lucide-react';
 import { authService } from '../services/auth';
 
 const SignUp = () => {
@@ -13,7 +13,8 @@ const SignUp = () => {
     companyName: '',
     userName: '',
     email: '',
-    password: ''
+    password: '',
+    logoUrl: ''
   });
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -26,7 +27,8 @@ const SignUp = () => {
             formData.userName,
             formData.companyName,
             formData.email,
-            formData.password
+            formData.password,
+            formData.logoUrl
         );
 
         if (result.requiresConfirmation) {
@@ -150,6 +152,20 @@ const SignUp = () => {
                   onChange={(e) => setFormData({...formData, companyName: e.target.value})}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all text-sm"
                   placeholder="Ex: Minha Empresa Ltda"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">URL da Logomarca (Opcional)</label>
+              <div className="relative">
+                <ImageIcon className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
+                <input 
+                  type="url" 
+                  value={formData.logoUrl}
+                  onChange={(e) => setFormData({...formData, logoUrl: e.target.value})}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all text-sm"
+                  placeholder="https://exemplo.com/logo.png"
                 />
               </div>
             </div>

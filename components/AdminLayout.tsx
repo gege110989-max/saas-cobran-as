@@ -6,26 +6,30 @@ import {
   Building2, 
   LogOut, 
   ShieldCheck,
-  CreditCard,
   Activity,
-  FileText
+  FileText,
+  Settings
 } from 'lucide-react';
+import { authService } from '../services/auth';
 
 const AdminLayout = ({ children }: { children?: React.ReactNode }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Limpa flag local
     localStorage.removeItem('movicobranca_admin_auth');
+    // Encerra sessão real do Supabase
+    await authService.signOut();
     navigate('/login');
   };
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Visão Geral', path: '/admin', exact: true },
-    { icon: Building2, label: 'Empresas', path: '/admin/companies' },
-    { icon: CreditCard, label: 'Financeiro SaaS', path: '/admin/finance' },
+    { icon: Building2, label: 'Empresas & Financeiro', path: '/admin/companies' },
     { icon: Activity, label: 'Atividade do Sistema', path: '/admin/activity' },
     { icon: FileText, label: 'Logs do Sistema', path: '/admin/logs' },
+    { icon: Settings, label: 'Configurações', path: '/admin/settings' },
   ];
 
   return (

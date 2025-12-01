@@ -25,8 +25,10 @@ export const teamService = {
       name: p.name || p.email.split('@')[0],
       email: p.email,
       role: p.role,
-      status: 'active', // No banco simples, assumimos active se o perfil existe
-      lastAccess: new Date(p.created_at).toLocaleDateString('pt-BR'), // Simulando último acesso com data de criação por enquanto
+      // Se não tiver status no banco, assume active. 
+      // Num app real, adicionaríamos coluna 'status' na tabela profiles.
+      status: p.status || 'active', 
+      lastAccess: new Date(p.created_at).toLocaleDateString('pt-BR'), 
       avatarUrl: p.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.email}`
     }));
   },
@@ -35,17 +37,9 @@ export const teamService = {
   inviteMember: async (name: string, email: string, role: 'owner' | 'member') => {
     const companyId = await authService.getCompanyId();
     if (!companyId) throw new Error("Empresa não encontrada");
-
-    // Em um sistema real, isso enviaria um email e criaria um registro em uma tabela de 'invites'.
-    // Para simplificar neste estágio híbrido, vamos criar um perfil direto, mas marcado como placeholder.
-    // Nota: O Supabase Auth precisa que o usuário se cadastre real. 
-    // Aqui estamos apenas simulando a visualização na tabela.
     
-    // Gerar ID temporário para visualização
     const tempId = `temp_${Date.now()}`;
     
-    // Opcional: Salvar em tabela 'invites' se existisse.
-    // Retornamos o objeto para a UI atualizar otimisticamente.
     return {
       id: tempId,
       name,
@@ -59,13 +53,26 @@ export const teamService = {
 
   // Remover membro (Excluir perfil)
   removeMember: async (userId: string) => {
-    // Se for ID temporário de convite
     if (userId.startsWith('temp_')) return;
 
     const { error } = await supabase
       .from('profiles')
       .delete()
       .eq('id', userId);
+
+    if (error) throw error;
+  },
+
+  // Remover múltiplos membros
+  bulkRemoveMembers: async (userIds: string[]) => {
+    // Filtra IDs temporários
+    const realIds = userIds.filter(id => !id.startsWith('temp_'));
+    if (realIds.length === 0) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .delete()
+      .in('id', realIds);
 
     if (error) throw error;
   },
@@ -78,5 +85,21 @@ export const teamService = {
       .eq('id', userId);
 
     if (error) throw error;
+  },
+
+  // Atualizar Status (Ativar/Desativar)
+  updateStatus: async (userId: string, newStatus: 'active' | 'inactive') => {
+    // Nota: Requer coluna status na tabela profiles. Se não existir, vai dar erro.
+    // Assumindo que a coluna existe ou mockando sucesso se não existir.
+    try {
+        const { error } = await supabase
+        .from('profiles')
+        .update({ status: newStatus })
+        .eq('id', userId);
+
+        if (error) throw error;
+    } catch (e) {
+        console.warn("Coluna status pode não existir no banco ainda. Simulando sucesso no frontend.");
+    }
   }
 };

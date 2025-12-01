@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   FileText, 
@@ -8,7 +8,6 @@ import {
   Clock, 
   AlertCircle, 
   CheckCircle2, 
-  ArrowUpRight, 
   TrendingUp, 
   CreditCard, 
   Users,
@@ -17,42 +16,16 @@ import {
   Save,
   Loader2,
   Settings2,
-  Mail
+  Play
 } from 'lucide-react';
 import { SaasInvoice } from '../../types';
-
-const MOCK_INVOICES: SaasInvoice[] = [
-  { id: 'INV-2024-001', companyId: '1', companyName: 'Tech Solutions Ltda', planName: 'Pro', amount: 297.90, status: 'paid', issueDate: '01/10/2024', dueDate: '15/10/2024', paidAt: '14/10/2024' },
-  { id: 'INV-2024-002', companyId: '2', companyName: 'Advocacia Santos', planName: 'Enterprise', amount: 497.90, status: 'paid', issueDate: '01/10/2024', dueDate: '15/10/2024', paidAt: '15/10/2024' },
-  { id: 'INV-2024-003', companyId: '4', companyName: 'Consultoria Digital', planName: 'Pro', amount: 297.90, status: 'overdue', issueDate: '01/09/2024', dueDate: '15/09/2024' },
-  { id: 'INV-2024-004', companyId: '1', companyName: 'Tech Solutions Ltda', planName: 'Pro', amount: 297.90, status: 'pending', issueDate: '01/11/2024', dueDate: '15/11/2024' },
-  { id: 'INV-2024-005', companyId: '5', companyName: 'Mercado Local', planName: 'Starter', amount: 97.90, status: 'pending', issueDate: '01/11/2024', dueDate: '15/11/2024' },
-];
-
-const StatCard = ({ title, value, subtext, icon: Icon, color, trend }: any) => (
-  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-    <div className="flex justify-between items-start">
-      <div>
-        <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">{title}</p>
-        <h3 className="text-2xl font-bold text-slate-900 mt-2">{value}</h3>
-      </div>
-      <div className={`p-3 rounded-lg ${color} bg-opacity-10`}>
-        <Icon className={`w-5 h-5 ${color.replace('bg-', 'text-')}`} />
-      </div>
-    </div>
-    <div className="mt-3 flex items-center justify-between">
-      <div className="text-xs text-slate-400">{subtext}</div>
-      {trend && (
-         <span className="text-emerald-600 text-xs font-bold bg-emerald-50 px-2 py-0.5 rounded flex items-center">
-            <ArrowUpRight className="w-3 h-3 mr-1" /> {trend}
-         </span>
-      )}
-    </div>
-  </div>
-);
+import StatCard from '../../components/StatCard';
+import { adminSettingsService } from '../../services/adminSettings';
+import { adminService } from '../../services/admin';
 
 const AdminFinance = () => {
-  const [invoices, setInvoices] = useState<SaasInvoice[]>(MOCK_INVOICES);
+  const [invoices, setInvoices] = useState<SaasInvoice[]>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -62,6 +35,7 @@ const AdminFinance = () => {
       daysTolerance: 5
   });
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [isRunningBlockRoutine, setIsRunningBlockRoutine] = useState(false);
 
   // Action States
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -69,6 +43,35 @@ const AdminFinance = () => {
 
   // Toast
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+
+  useEffect(() => {
+      loadSettings();
+      loadInvoices();
+  }, []);
+
+  const loadSettings = async () => {
+      try {
+          const config = await adminSettingsService.getConfig();
+          if (config.autoBlock) {
+              setAutoBlockConfig(config.autoBlock);
+          }
+      } catch (e) {
+          console.error("Failed to load settings", e);
+      }
+  };
+
+  const loadInvoices = async () => {
+      setIsLoadingInvoices(true);
+      try {
+          const data = await adminService.getSaasInvoices();
+          setInvoices(data);
+      } catch (e) {
+          console.error("Failed to load invoices", e);
+          showToast("Erro ao carregar faturas.", 'error');
+      } finally {
+          setIsLoadingInvoices(false);
+      }
+  };
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
       setToast({ msg, type });
@@ -78,7 +81,6 @@ const AdminFinance = () => {
   const handleDownloadPdf = (id: string) => {
     setProcessingId(id);
     setActionType('download');
-    // Simulate API call
     setTimeout(() => {
         showToast(`Fatura ${id} baixada com sucesso.`);
         setProcessingId(null);
@@ -89,7 +91,6 @@ const AdminFinance = () => {
   const handleResendInvoice = (id: string, email: string) => {
     setProcessingId(id);
     setActionType('resend');
-    // Simulate API call
     setTimeout(() => {
         showToast(`Cobrança reenviada para o cliente.`);
         setProcessingId(null);
@@ -97,12 +98,41 @@ const AdminFinance = () => {
     }, 1500);
   };
 
-  const handleSaveBlockConfig = () => {
+  const handleSaveBlockConfig = async () => {
       setIsSavingConfig(true);
-      setTimeout(() => {
+      try {
+          const currentConfig = await adminSettingsService.getConfig();
+          await adminSettingsService.saveConfig({
+              ...currentConfig,
+              autoBlock: autoBlockConfig
+          });
+          showToast("Configurações de bloqueio atualizadas e salvas!");
+      } catch (error) {
+          showToast("Erro ao salvar configurações.", 'error');
+      } finally {
           setIsSavingConfig(false);
-          showToast("Configurações de bloqueio atualizadas!");
-      }, 1000);
+      }
+  };
+
+  const handleRunBlockRoutine = async () => {
+      if (!autoBlockConfig.enabled) {
+          showToast("Ative o bloqueio primeiro para executar.", 'error');
+          return;
+      }
+      
+      if (!window.confirm("Atenção: Isso irá suspender IMEDIATAMENTE todas as empresas que excederam os dias de tolerância. Deseja continuar?")) {
+          return;
+      }
+
+      setIsRunningBlockRoutine(true);
+      try {
+          const result = await adminService.runAutoBlockRoutine();
+          showToast(result.message, result.suspended > 0 ? 'success' : 'success');
+      } catch (error: any) {
+          showToast("Erro ao executar rotina: " + error.message, 'error');
+      } finally {
+          setIsRunningBlockRoutine(false);
+      }
   };
 
   const filteredInvoices = invoices.filter(invoice => {
@@ -154,7 +184,7 @@ const AdminFinance = () => {
           subtext="Annual Recurring Revenue" 
           trend="+12%"
           icon={TrendingUp} 
-          color="bg-indigo-500 text-indigo-600"
+          color="bg-indigo-500 text-indigo-600 bg-opacity-10"
         />
         <StatCard 
           title="LTV (Valor Vitalício)" 
@@ -162,7 +192,7 @@ const AdminFinance = () => {
           subtext="Média por cliente" 
           trend="+5%"
           icon={DollarSign} 
-          color="bg-emerald-500 text-emerald-600"
+          color="bg-emerald-500 text-emerald-600 bg-opacity-10"
         />
         <StatCard 
           title="CAC (Custo Aquisição)" 
@@ -170,14 +200,14 @@ const AdminFinance = () => {
           subtext="Marketing / Vendas" 
           trend="-2%"
           icon={Users} 
-          color="bg-blue-500 text-blue-600"
+          color="bg-blue-500 text-blue-600 bg-opacity-10"
         />
          <StatCard 
           title="Inadimplência" 
           value="1.8%" 
           subtext="Faturas vencidas > 30d" 
           icon={AlertCircle} 
-          color="bg-rose-500 text-rose-600"
+          color="bg-rose-500 text-rose-600 bg-opacity-10"
         />
       </div>
 
@@ -230,7 +260,15 @@ const AdminFinance = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {filteredInvoices.map((invoice) => (
+                        {isLoadingInvoices ? (
+                            <tr><td colSpan={5} className="px-6 py-20 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500"/></td></tr>
+                        ) : filteredInvoices.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                                    Nenhuma fatura encontrada.
+                                </td>
+                            </tr>
+                        ) : filteredInvoices.map((invoice) => (
                             <tr key={invoice.id} className="hover:bg-slate-50/50 transition-colors">
                                 <td className="px-6 py-4">
                                     <div className="font-medium text-slate-900">{invoice.companyName}</div>
@@ -267,13 +305,6 @@ const AdminFinance = () => {
                                 </td>
                             </tr>
                         ))}
-                        {filteredInvoices.length === 0 && (
-                            <tr>
-                                <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                                    Nenhuma fatura encontrada.
-                                </td>
-                            </tr>
-                        )}
                     </tbody>
                 </table>
             </div>
@@ -322,14 +353,26 @@ const AdminFinance = () => {
                         </p>
                     </div>
 
-                    <button 
-                        onClick={handleSaveBlockConfig}
-                        disabled={isSavingConfig}
-                        className="w-full mt-4 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
-                    >
-                        {isSavingConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar Regras
-                    </button>
+                    <div className="flex flex-col gap-2 mt-4">
+                        <button 
+                            onClick={handleSaveBlockConfig}
+                            disabled={isSavingConfig}
+                            className="w-full bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                        >
+                            {isSavingConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            Salvar Regras
+                        </button>
+                        
+                        <button 
+                            onClick={handleRunBlockRoutine}
+                            disabled={isRunningBlockRoutine || !autoBlockConfig.enabled}
+                            className="w-full bg-rose-50 text-rose-700 border border-rose-200 py-2 rounded-lg text-sm font-medium hover:bg-rose-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Executa a verificação manualmente agora"
+                        >
+                            {isRunningBlockRoutine ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                            Rodar Rotina Agora
+                        </button>
+                    </div>
                 </div>
             </div>
 

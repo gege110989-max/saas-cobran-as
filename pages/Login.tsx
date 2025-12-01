@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Wallet, ArrowRight, Lock, Mail, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Wallet, ArrowRight, Lock, Mail, Loader2, ShieldCheck, AlertCircle, ExternalLink } from 'lucide-react';
 import { authService } from '../services/auth';
 
 const Login = () => {
@@ -9,6 +9,7 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [showAdminHelp, setShowAdminHelp] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -18,20 +19,29 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setShowAdminHelp(false);
+    
+    const email = formData.email.trim();
+    const password = formData.password;
     
     try {
       if (isAdminMode) {
-        // Mock Admin Login
-        // Permissive check for demo purposes: Accept specific email or any email with 'admin'
-        if (formData.email === 'admin@movicobranca.com' || formData.email.includes('admin')) {
+        // Autenticação REAL do Admin no Supabase
+        // Isso é necessário para obter o Token JWT que libera o acesso 'is_admin()' no banco
+        await authService.signIn(email, password);
+        
+        // Verificação de segurança no frontend
+        if (email.includes('admin') || email.includes('movicobranca')) {
              localStorage.setItem('movicobranca_admin_auth', 'true');
              navigate('/admin');
         } else {
-            throw new Error("Acesso não autorizado. Para testar o admin, use: admin@movicobranca.com");
+            // Se logou mas não tem email de admin
+            await authService.signOut();
+            throw new Error("Este usuário não possui permissão de administrador.");
         }
       } else {
-        // Real Supabase Login
-        await authService.signIn(formData.email, formData.password);
+        // Login de Empresa (Tenant)
+        await authService.signIn(email, password);
         navigate('/');
       }
     } catch (err: any) {
@@ -41,9 +51,12 @@ const Login = () => {
         // Map Supabase errors to Portuguese
         if (err.message === "Invalid login credentials") {
             msg = "E-mail ou senha incorretos.";
+            if (isAdminMode) {
+                setShowAdminHelp(true);
+            }
         } else if (err.message.includes("Email not confirmed")) {
             msg = "E-mail não confirmado. Verifique sua caixa de entrada.";
-        } else if (isAdminMode) {
+        } else {
             msg = err.message;
         }
         
@@ -80,9 +93,22 @@ const Login = () => {
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-rose-50 border border-rose-100 rounded-lg flex items-center gap-2 text-sm text-rose-600">
-                <AlertCircle className="w-4 h-4" />
-                {error}
+            <div className="mb-4 p-3 bg-rose-50 border border-rose-100 rounded-lg flex flex-col gap-2 text-sm text-rose-600 animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {error}
+                </div>
+                
+                {showAdminHelp && isAdminMode && (
+                    <a 
+                        href="https://supabase.com/dashboard/project/_/auth/users" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-xs text-rose-700 underline hover:text-rose-900 flex items-center gap-1 ml-6"
+                    >
+                        Criar usuário no Supabase <ExternalLink className="w-3 h-3" />
+                    </a>
+                )}
             </div>
           )}
 
@@ -97,7 +123,7 @@ const Login = () => {
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                   className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:bg-white transition-all ${isAdminMode ? 'focus:ring-indigo-500' : 'focus:ring-brand-500'}`}
-                  placeholder={isAdminMode ? "admin@movicobranca.com" : "seu@email.com.br"}
+                  placeholder={isAdminMode ? "admin@movicobranca.com.br" : "seu@email.com.br"}
                 />
               </div>
             </div>
@@ -118,9 +144,6 @@ const Login = () => {
                   placeholder="••••••••"
                 />
               </div>
-              {isAdminMode && (
-                  <p className="text-[10px] text-slate-400 mt-1 text-right">Senha de teste: qualquer uma</p>
-              )}
             </div>
 
             <button 

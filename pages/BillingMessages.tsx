@@ -1,16 +1,29 @@
-import React, { useState } from 'react';
-import { Save, MessageSquareCode, FileText, Image, Sparkles, Loader2 } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { Save, MessageSquareCode, FileText, Image, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 import { improveTemplateAI } from '../services/ai';
 
-const TemplateCard = ({ title, badge, badgeColor, defaultText }: any) => {
-    const [text, setText] = useState(defaultText);
+// Interface for props
+interface TemplateCardProps {
+    title: string;
+    badge: string;
+    badgeColor: string;
+    value: string;
+    onChange: (val: string) => void;
+}
+
+const TemplateCard = ({ title, badge, badgeColor, value, onChange }: TemplateCardProps) => {
     const [isImproving, setIsImproving] = useState(false);
 
     const handleImproveAI = async () => {
       setIsImproving(true);
       try {
-        const improved = await improveTemplateAI(text);
-        if (improved) setText(improved.trim());
+        // Determine type based on title for better AI context
+        let type = 'collection';
+        if (title.includes('Preventivo')) type = 'informational';
+        
+        const improved = await improveTemplateAI(value, type);
+        if (improved) onChange(improved.trim());
       } catch (error) {
         alert("Erro ao melhorar texto.");
       } finally {
@@ -39,8 +52,8 @@ const TemplateCard = ({ title, badge, badgeColor, defaultText }: any) => {
             <div className="relative">
                 <textarea 
                     rows={4}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
                     className="w-full text-sm border-slate-200 rounded-lg p-3 focus:ring-brand-500 focus:border-brand-500 bg-slate-50/50"
                 ></textarea>
                 
@@ -57,7 +70,7 @@ const TemplateCard = ({ title, badge, badgeColor, defaultText }: any) => {
                     {['%name%', '%invoice%', '%valor%', '%link%', '%pix%'].map(v => (
                         <button 
                             key={v}
-                            onClick={() => setText(text + ' ' + v)}
+                            onClick={() => onChange(value + ' ' + v)}
                             className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded border border-indigo-100 hover:bg-indigo-100 transition-colors"
                         >
                             {v}
@@ -70,15 +83,57 @@ const TemplateCard = ({ title, badge, badgeColor, defaultText }: any) => {
 }
 
 const BillingMessages = () => {
+  const [messages, setMessages] = useState({
+      preventive: "Olá %name%, não deixe para a última hora! 🕒 Sua fatura de R$ %valor% vence em breve. Evite correrias e garanta seu serviço em dia acessando agora: %link%",
+      due_date: "Hoje é o dia! A fatura %invoice% vence hoje. Evite multas pagando pelo Pix: %pix%",
+      overdue: "Oi %name%, não identificamos o pagamento da fatura %invoice%. O serviço pode ser suspenso. Pague agora: %link%"
+  });
+  
+  const [isSaving, setIsSaving] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+
+  useEffect(() => {
+      const saved = localStorage.getItem('movicobranca_billing_messages');
+      if (saved) {
+          try {
+              setMessages(JSON.parse(saved));
+          } catch (e) {
+              console.error("Error parsing saved messages", e);
+          }
+      }
+  }, []);
+
+  const handleSave = () => {
+      setIsSaving(true);
+      localStorage.setItem('movicobranca_billing_messages', JSON.stringify(messages));
+      
+      setTimeout(() => {
+          setIsSaving(false);
+          setShowToast(true);
+          setTimeout(() => setShowToast(false), 3000);
+      }, 800);
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-20">
+    <div className="max-w-4xl mx-auto space-y-6 pb-20 relative">
+       {showToast && (
+        <div className="fixed top-6 right-6 z-50 px-4 py-3 rounded-lg shadow-xl bg-emerald-600 text-white text-sm font-medium animate-in slide-in-from-top-5 fade-in duration-300 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            Modelos salvos com sucesso!
+        </div>
+       )}
+
        <div className="flex justify-between items-end">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Mensagens Automáticas</h2>
           <p className="text-slate-500">Personalize os textos enviados pelo WhatsApp e use variáveis dinâmicas.</p>
         </div>
-        <button className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 rounded-lg font-medium shadow-md transition-all hover:shadow-lg">
-            <Save className="w-4 h-4" />
+        <button 
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 rounded-lg font-medium shadow-md transition-all hover:shadow-lg disabled:opacity-70"
+        >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Salvar Modelos
         </button>
       </div>
@@ -88,21 +143,24 @@ const BillingMessages = () => {
             title="Lembrete Preventivo" 
             badge="Antes do Vencimento" 
             badgeColor="bg-sky-100 text-sky-700"
-            defaultText="Olá %name%, sua fatura no valor de R$ %valor% vence em breve. Para facilitar, aqui está o link: %link%"
+            value={messages.preventive}
+            onChange={(val) => setMessages({...messages, preventive: val})}
         />
 
         <TemplateCard 
             title="Cobrança no Dia" 
             badge="Dia do Vencimento" 
             badgeColor="bg-emerald-100 text-emerald-700"
-            defaultText="Hoje é o dia! A fatura %invoice% vence hoje. Evite multas pagando pelo Pix: %pix%"
+            value={messages.due_date}
+            onChange={(val) => setMessages({...messages, due_date: val})}
         />
 
         <TemplateCard 
             title="Cobrança de Atrasados" 
             badge="Após Vencimento" 
             badgeColor="bg-rose-100 text-rose-700"
-            defaultText="Oi %name%, não identificamos o pagamento da fatura %invoice%. O serviço pode ser suspenso. Pague agora: %link%"
+            value={messages.overdue}
+            onChange={(val) => setMessages({...messages, overdue: val})}
         />
       </div>
 

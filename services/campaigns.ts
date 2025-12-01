@@ -1,97 +1,162 @@
 
+import { supabase } from './supabase';
+import { authService } from './auth';
 import { Campaign } from "../types";
 
-const CAMPAIGNS_KEY = 'movicobranca_campaigns';
-
-const INITIAL_CAMPAIGNS: Campaign[] = [
-    {
-        id: 'camp_1',
-        name: 'Aviso de Manutenção',
-        type: 'informational',
-        status: 'completed',
-        audienceFilter: 'active',
-        totalTargets: 150,
-        sentCount: 150,
-        deliveredCount: 148,
-        readCount: 120,
-        createdAt: '2024-10-20',
-        messageContent: 'Olá %name%, teremos uma manutenção programada...'
-    },
-    {
-        id: 'camp_2',
-        name: 'Promoção Black Friday',
-        type: 'promotional',
-        status: 'draft',
-        audienceFilter: 'all',
-        totalTargets: 1240,
-        sentCount: 0,
-        deliveredCount: 0,
-        readCount: 0,
-        createdAt: '2024-11-01',
-        messageContent: 'Oi %name%, a Black Friday chegou!'
-    }
-];
-
 export const getCampaigns = async (): Promise<Campaign[]> => {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    const stored = localStorage.getItem(CAMPAIGNS_KEY);
-    if (stored) return JSON.parse(stored);
-    localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(INITIAL_CAMPAIGNS));
-    return INITIAL_CAMPAIGNS;
+    const companyId = await authService.getCompanyId();
+    if (!companyId) return [];
+
+    const { data, error } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error("Error fetching campaigns:", error);
+        return [];
+    }
+
+    return data.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        status: c.status,
+        audienceFilter: c.audience_filter,
+        totalTargets: c.total_targets,
+        sentCount: c.sent_count,
+        deliveredCount: c.delivered_count,
+        readCount: c.read_count,
+        createdAt: new Date(c.created_at).toLocaleDateString('pt-BR'),
+        messageContent: c.message_content,
+        scheduledAt: c.scheduled_at
+    }));
 };
 
 export const createCampaign = async (campaign: Omit<Campaign, 'id' | 'createdAt' | 'sentCount' | 'deliveredCount' | 'readCount'>): Promise<Campaign> => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const newCampaign: Campaign = {
-        ...campaign,
-        id: `camp_${Date.now()}`,
-        createdAt: new Date().toLocaleDateString('pt-BR'),
-        sentCount: 0,
-        deliveredCount: 0,
-        readCount: 0
+    const companyId = await authService.getCompanyId();
+    if (!companyId) throw new Error("Company not found");
+
+    const payload = {
+        company_id: companyId,
+        name: campaign.name,
+        type: campaign.type,
+        status: campaign.status,
+        audience_filter: campaign.audienceFilter,
+        message_content: campaign.messageContent,
+        scheduled_at: campaign.scheduledAt || null,
+        total_targets: campaign.totalTargets,
+        sent_count: 0,
+        delivered_count: 0,
+        read_count: 0
     };
 
-    const stored = localStorage.getItem(CAMPAIGNS_KEY);
-    const campaigns = stored ? JSON.parse(stored) : INITIAL_CAMPAIGNS;
-    const updated = [newCampaign, ...campaigns];
-    
-    localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(updated));
-    return newCampaign;
+    const { data, error } = await supabase
+        .from('campaigns')
+        .insert([payload])
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    return {
+        id: data.id,
+        name: data.name,
+        type: data.type,
+        status: data.status,
+        audienceFilter: data.audience_filter,
+        totalTargets: data.total_targets,
+        sentCount: data.sent_count,
+        deliveredCount: data.delivered_count,
+        readCount: data.read_count,
+        createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
+        messageContent: data.message_content,
+        scheduledAt: data.scheduled_at
+    };
+};
+
+export const updateCampaign = async (id: string, updates: Partial<Campaign>): Promise<Campaign> => {
+    const payload: any = {};
+    if (updates.name) payload.name = updates.name;
+    if (updates.messageContent) payload.message_content = updates.messageContent;
+    if (updates.audienceFilter) payload.audience_filter = updates.audienceFilter;
+    if (updates.scheduledAt !== undefined) payload.scheduled_at = updates.scheduledAt;
+    if (updates.status) payload.status = updates.status;
+    if (updates.totalTargets !== undefined) payload.total_targets = updates.totalTargets;
+
+    // Update timestamps implicit in DB via triggers usually, but explicit here for immediate UI
+    payload.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+        .from('campaigns')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    return {
+        id: data.id,
+        name: data.name,
+        type: data.type,
+        status: data.status,
+        audienceFilter: data.audience_filter,
+        totalTargets: data.total_targets,
+        sentCount: data.sent_count,
+        deliveredCount: data.delivered_count,
+        readCount: data.read_count,
+        createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
+        messageContent: data.message_content,
+        scheduledAt: data.scheduled_at
+    };
 };
 
 export const deleteCampaign = async (id: string): Promise<void> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const stored = localStorage.getItem(CAMPAIGNS_KEY);
-    if (!stored) return;
-    
-    const campaigns: Campaign[] = JSON.parse(stored);
-    const updated = campaigns.filter(c => c.id !== id);
-    localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(updated));
+    const { error } = await supabase
+        .from('campaigns')
+        .delete()
+        .eq('id', id);
+
+    if (error) throw error;
 };
 
 export const updateCampaignStatus = async (id: string, status: Campaign['status'], progress?: number) => {
-    const stored = localStorage.getItem(CAMPAIGNS_KEY);
-    if (!stored) return;
+    const payload: any = { status, updated_at: new Date().toISOString() };
     
-    let campaigns: Campaign[] = JSON.parse(stored);
-    campaigns = campaigns.map(c => {
-        if (c.id === id) {
-            const updates: any = { status };
-            
-            // Only update counts if progress is provided, otherwise keep existing counts
-            if (progress !== undefined) {
-                // Simulate sending logic
-                updates.sentCount = Math.floor(c.totalTargets * (progress / 100));
-                updates.deliveredCount = Math.floor(updates.sentCount * 0.98); // 98% delivery rate mock
-                updates.readCount = Math.floor(updates.sentCount * 0.75); // 75% read rate mock
-            }
-            
-            return { ...c, ...updates };
+    // Logic to fetch current total to calculate absolute numbers from progress percentage
+    if (progress !== undefined) {
+        const { data: current } = await supabase.from('campaigns').select('total_targets').eq('id', id).single();
+        if (current) {
+            const currentSent = Math.floor(current.total_targets * (progress / 100));
+            payload.sent_count = currentSent;
+            payload.delivered_count = Math.floor(currentSent * 0.98);
+            payload.read_count = Math.floor(currentSent * 0.75);
         }
-        return c;
-    });
-    
-    localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
-    return campaigns.find(c => c.id === id);
+    }
+
+    const { data, error } = await supabase
+        .from('campaigns')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) return null;
+
+    return {
+        id: data.id,
+        name: data.name,
+        type: data.type,
+        status: data.status,
+        audienceFilter: data.audience_filter,
+        totalTargets: data.total_targets,
+        sentCount: data.sent_count,
+        deliveredCount: data.delivered_count,
+        readCount: data.read_count,
+        createdAt: new Date(data.created_at).toLocaleDateString('pt-BR'),
+        messageContent: data.message_content,
+        scheduledAt: data.scheduled_at
+    };
 };

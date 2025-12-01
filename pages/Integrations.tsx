@@ -20,19 +20,23 @@ import {
   FlaskConical,
   Terminal,
   Play,
-  Plus,
-  UserPlus
+  UserPlus,
+  Users,
+  FileText,
+  RefreshCw,
+  ExternalLink,
+  Clock,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
-import { validateAsaasToken, validateWhatsAppConnection, getIntegrationStatus } from '../services/integrations';
-import { asaasService } from '../services/asaas';
+import { validateAsaasToken, validateWhatsAppConnection, getIntegrationStatus, asaasService as asaasConfigService, whatsAppService } from '../services/integrations';
+import { asaasService } from '../services/asaas'; // Logic service
 import { authService } from '../services/auth';
 import { getWebhookUrl } from '../services/functions';
 import { SandboxLog, AsaasConfig } from '../types';
 
 const WebhookUrlBox = ({ provider, companyId }: { provider: string, companyId: string }) => {
-    // Agora apontamos para as Edge Functions Reais + Query Param de segurança
     const baseUrl = getWebhookUrl(provider === 'asaas' ? 'asaas-webhook' : 'whatsapp-webhook');
-    // Adicionamos o company_id como query param para a Edge Function saber de quem é o evento
     const url = companyId 
         ? `${baseUrl}?company_id=${companyId}`
         : 'Carregando URL...';
@@ -99,10 +103,16 @@ const Integrations = () => {
   const [asaasConfig, setAsaasConfig] = useState<AsaasConfig>({
       apiKey: '',
       sandboxKey: '',
-      mode: 'production'
+      mode: 'production',
+      autoSync: false,
+      syncTime: '08:00'
   });
   const [isAsaasLoading, setIsAsaasLoading] = useState(false);
   const [isAsaasTesting, setIsAsaasTesting] = useState(false);
+  
+  // Asaas Sync States
+  const [isSyncingCustomers, setIsSyncingCustomers] = useState(false);
+  const [isSyncingInvoices, setIsSyncingInvoices] = useState(false);
 
   // Sandbox State
   const [logs, setLogs] = useState<SandboxLog[]>([]);
@@ -121,19 +131,21 @@ const Integrations = () => {
   const [showWaToken, setShowWaToken] = useState(false);
 
   useEffect(() => {
-    const currentStatus = getIntegrationStatus();
-    setStatus(currentStatus);
-    
-    // Load config
-    const savedAsaas = asaasService.getConfig();
-    if (savedAsaas) setAsaasConfig(savedAsaas);
+    // Async load all configs
+    const loadAll = async () => {
+        const currentStatus = await getIntegrationStatus();
+        setStatus(currentStatus);
+        
+        const savedAsaas = await asaasConfigService.getConfig();
+        if (savedAsaas) setAsaasConfig(prev => ({...prev, ...savedAsaas}));
 
-    // Fetch real company ID
-    const fetchCompanyInfo = async () => {
+        const savedWa = await whatsAppService.getConfig();
+        if (savedWa) setWaConfig(prev => ({ ...prev, ...savedWa }));
+
         const id = await authService.getCompanyId();
         if (id) setCompanyId(id);
     };
-    fetchCompanyInfo();
+    loadAll();
   }, []);
 
   const addLog = (message: string, type: SandboxLog['type'] = 'info') => {
@@ -161,7 +173,7 @@ const Integrations = () => {
     }
     setIsAsaasTesting(true);
     try {
-        await validateAsaasToken(key);
+        await validateAsaasToken(key, asaasConfig.mode);
         showNotification('success', "Conexão com Asaas estabelecida com sucesso!");
     } catch (e: any) {
         showNotification('error', e.message || "Falha na conexão Asaas. Verifique sua chave de API.");
@@ -175,15 +187,63 @@ const Integrations = () => {
     if (!key) return;
     setIsAsaasLoading(true);
     try {
-        await validateAsaasToken(key);
-        asaasService.saveConfig(asaasConfig);
+        await validateAsaasToken(key, asaasConfig.mode);
+        // Save to DB via new Service
+        await asaasConfigService.saveConfig(asaasConfig);
         setStatus(prev => ({ ...prev, asaas: true }));
-        showNotification('success', `Integração Asaas (${asaasConfig.mode}) salva!`);
+        showNotification('success', `Integração Asaas (${asaasConfig.mode}) salva e sincronizada na nuvem!`);
     } catch (e: any) {
         showNotification('error', e.message || "Chave inválida. Não foi possível salvar.");
     } finally {
         setIsAsaasLoading(false);
     }
+  };
+
+  const handleSyncCustomers = async () => {
+      setIsSyncingCustomers(true);
+      try {
+          const customers = await asaasService.syncCustomers();
+          const count = Array.isArray(customers) ? customers.length : 0;
+          showNotification('success', `Sucesso! ${count} clientes sincronizados.`);
+      } catch (e: any) {
+          showNotification('error', `Erro na sincronização: ${e.message}`);
+      } finally {
+          setIsSyncingCustomers(false);
+      }
+  };
+
+  const handleSyncInvoices = async () => {
+      setIsSyncingInvoices(true);
+      try {
+          const count = await asaasService.syncInvoices();
+          showNotification('success', `Sincronização concluída! ${count} faturas processadas.`);
+      } catch (e: any) {
+          showNotification('error', `Erro ao buscar faturas: ${e.message}`);
+      } finally {
+          setIsSyncingInvoices(false);
+      }
+  };
+
+  const handleFullSync = async () => {
+      if (isSyncingCustomers || isSyncingInvoices) return;
+      
+      setIsSyncingCustomers(true);
+      setIsSyncingInvoices(true);
+      
+      try {
+          const [customers, invoicesCount] = await Promise.all([
+              asaasService.syncCustomers(),
+              asaasService.syncInvoices()
+          ]);
+          
+          const custCount = Array.isArray(customers) ? customers.length : 0;
+          showNotification('success', `Sincronização completa: ${custCount} clientes e ${invoicesCount} faturas.`);
+      } catch (e: any) {
+          showNotification('error', `Erro na sincronização: ${e.message}`);
+      } finally {
+          setIsSyncingCustomers(false);
+          setIsSyncingInvoices(false);
+      }
   };
 
   // --- Sandbox Actions ---
@@ -258,8 +318,9 @@ const Integrations = () => {
     setIsWaLoading(true);
     try {
         await validateWhatsAppConnection(waConfig);
+        await whatsAppService.saveConfig(waConfig);
         setStatus(prev => ({ ...prev, whatsapp: true }));
-        showNotification('success', "Integração WhatsApp salva com sucesso!");
+        showNotification('success', "Integração WhatsApp salva e segura no banco de dados!");
     } catch (e: any) {
         showNotification('error', e.message || "Erro ao salvar configuração do WhatsApp.");
     } finally {
@@ -297,9 +358,21 @@ const Integrations = () => {
                         <p className="text-sm text-slate-500 max-w-sm">Sincronização financeira e emissão de boletos.</p>
                     </div>
                 </div>
-                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${status.asaas ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                    {status.asaas ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
-                    {status.asaas ? 'Conectado' : 'Inativo'}
+                <div className="flex items-center gap-3">
+                    {status.asaas && (
+                        <button 
+                            onClick={handleFullSync}
+                            disabled={isSyncingCustomers || isSyncingInvoices}
+                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-transparent hover:border-indigo-100"
+                            title="Sincronizar Tudo Agora"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${(isSyncingCustomers || isSyncingInvoices) ? 'animate-spin' : ''}`} />
+                        </button>
+                    )}
+                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${status.asaas ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                        {status.asaas ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                        {status.asaas ? 'Conectado' : 'Inativo'}
+                    </div>
                 </div>
             </div>
 
@@ -321,9 +394,9 @@ const Integrations = () => {
 
             <div className="p-6 bg-slate-50/30">
                 {activeTab === 'config' ? (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                         {/* Mode Selector */}
-                        <div className="flex items-center gap-4 mb-4">
+                        <div className="flex items-center gap-4">
                             <label className="text-sm font-bold text-slate-700">Ambiente:</label>
                             <div className="flex bg-slate-100 rounded-lg p-1">
                                 <button 
@@ -375,7 +448,7 @@ const Integrations = () => {
                             </div>
                         )}
 
-                        <div className="flex gap-2 pt-2">
+                        <div className="flex gap-2">
                             <button 
                                 onClick={handleTestAsaas}
                                 disabled={isAsaasTesting || isAsaasLoading}
@@ -393,8 +466,88 @@ const Integrations = () => {
                                 Salvar
                             </button>
                         </div>
+
+                        {/* Automação de Sincronização */}
+                        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-5">
+                            <h4 className="font-bold text-indigo-900 text-sm mb-3 flex items-center gap-2">
+                                <Clock className="w-4 h-4 text-indigo-600" /> 
+                                Automação de Sincronização
+                            </h4>
+                            <div className="flex items-center justify-between">
+                                <div className="text-xs text-indigo-800 mr-4">
+                                    O sistema buscará automaticamente novos clientes, faturas criadas e atualizará status de inadimplência todos os dias.
+                                </div>
+                                <div className="flex items-center gap-3 bg-white px-3 py-2 rounded-lg border border-indigo-100 shadow-sm">
+                                    <button 
+                                        onClick={() => setAsaasConfig(prev => ({ ...prev, autoSync: !prev.autoSync }))}
+                                        className={`text-2xl transition-colors ${asaasConfig.autoSync ? 'text-emerald-500' : 'text-slate-300'}`}
+                                    >
+                                        {asaasConfig.autoSync ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8" />}
+                                    </button>
+                                    
+                                    <div className="w-px h-6 bg-slate-200"></div>
+                                    
+                                    <input 
+                                        type="time" 
+                                        value={asaasConfig.syncTime || '08:00'}
+                                        onChange={(e) => setAsaasConfig(prev => ({ ...prev, syncTime: e.target.value }))}
+                                        disabled={!asaasConfig.autoSync}
+                                        className="text-sm font-bold text-slate-700 bg-transparent focus:outline-none disabled:opacity-50"
+                                    />
+                                </div>
+                            </div>
+                        </div>
                         
-                        <div className="mt-4">
+                        {/* Sincronização Manual */}
+                        <div className="border-t border-slate-100 pt-6">
+                            <h4 className="font-bold text-slate-900 text-sm mb-4 flex items-center gap-2">
+                                <RefreshCcw className="w-4 h-4 text-slate-500" /> 
+                                Sincronização Manual
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="p-4 border border-slate-200 rounded-lg bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="p-2 bg-white rounded-md border border-slate-200 text-slate-500">
+                                            <Users className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-700 text-sm">Clientes</p>
+                                            <p className="text-xs text-slate-500">Busque novos cadastros do Asaas</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={handleSyncCustomers} 
+                                        disabled={isSyncingCustomers}
+                                        className="w-full mt-2 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold uppercase tracking-wider rounded hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {isSyncingCustomers ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                        Sincronizar Clientes
+                                    </button>
+                                </div>
+
+                                <div className="p-4 border border-slate-200 rounded-lg bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="p-2 bg-white rounded-md border border-slate-200 text-slate-500">
+                                            <FileText className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-700 text-sm">Faturas</p>
+                                            <p className="text-xs text-slate-500">Atualize status de pagamentos</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={handleSyncInvoices}
+                                        disabled={isSyncingInvoices}
+                                        className="w-full mt-2 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold uppercase tracking-wider rounded hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {isSyncingInvoices ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                        Sincronizar Faturas
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="mt-6">
                             <WebhookUrlBox provider="asaas" companyId={companyId} />
                         </div>
                     </div>
@@ -478,6 +631,9 @@ const Integrations = () => {
                     <div>
                         <h3 className="font-bold text-slate-900 text-lg">WhatsApp Cloud API</h3>
                         <p className="text-sm text-slate-500 max-w-sm">Envio de mensagens oficiais da Meta. Requer conta Business verificada.</p>
+                        <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline flex items-center gap-1 mt-1">
+                            <ExternalLink className="w-3 h-3" /> Gerenciar na Meta
+                        </a>
                     </div>
                 </div>
                 <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${status.whatsapp ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>

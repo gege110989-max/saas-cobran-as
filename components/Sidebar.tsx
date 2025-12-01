@@ -47,8 +47,8 @@ const Sidebar = () => {
     {
       title: 'COBRANÇAS',
       items: [
-        { icon: Settings2, label: 'Configurações', path: '/billing-settings' },
-        { icon: MessageSquareCode, label: 'Mensagens Auto', path: '/billing-messages' },
+        // Unified Link
+        { icon: Settings2, label: 'Configurações', path: '/billing' },
         { icon: Contact, label: 'Contatos', path: '/contacts' },
       ]
     },

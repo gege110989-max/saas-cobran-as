@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Send, 
@@ -14,25 +13,18 @@ import {
   Sparkles,
   Loader2,
   CheckCircle2,
-  ArrowUpDown,
   Filter
 } from 'lucide-react';
 import { Conversation, Message } from '../types';
 import { generateSmartReply } from '../services/ai';
-import { getConversations, updateConversationStatus } from '../services/conversations';
-
-const MOCK_MESSAGES: Message[] = [
-  { id: 'm1', conversationId: '1', content: 'Olá Ana, sua fatura de R$ 450,00 vence hoje.', sender: 'ai', type: 'text', timestamp: '10:00', status: 'read' },
-  { id: 'm2', conversationId: '1', content: 'Oi, não vou conseguir pagar hoje. Tem como prorrogar?', sender: 'user', type: 'text', timestamp: '10:05', status: 'read' },
-  { id: 'm3', conversationId: '1', content: 'Entendo. Posso gerar um novo boleto para dia 30/10 com um pequeno juros de 1%. Deseja confirmar?', sender: 'ai', type: 'text', timestamp: '10:06', status: 'delivered' },
-  { id: 'm4', conversationId: '1', content: 'Gostaria de negociar o boleto.', sender: 'user', type: 'text', timestamp: '10:30', status: 'delivered' },
-];
+import { getConversations, updateConversationStatus, getMessages, sendMessage } from '../services/conversations';
 
 const Conversations = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
   const [selectedChat, setSelectedChat] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [inputText, setInputText] = useState('');
   
   // Filtering & Sorting State
@@ -45,18 +37,32 @@ const Conversations = () => {
   
   // Feedback
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load Chats
   useEffect(() => {
     loadConversations();
   }, []);
+
+  // Load Messages when Chat Selected
+  useEffect(() => {
+      if (selectedChat) {
+          loadMessages(selectedChat.id);
+      }
+  }, [selectedChat?.id]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isGenerating]);
 
   const loadConversations = async () => {
     try {
       const data = await getConversations();
       setConversations(data);
-      if (data.length > 0 && !selectedChat) {
-        setSelectedChat(data[0]);
-      }
+      // Optional: Auto-select first chat
+      // if (data.length > 0 && !selectedChat) setSelectedChat(data[0]);
     } catch (error) {
       console.error("Failed to load chats", error);
     } finally {
@@ -64,25 +70,44 @@ const Conversations = () => {
     }
   };
 
+  const loadMessages = async (chatId: string) => {
+      setIsLoadingMessages(true);
+      try {
+          const msgs = await getMessages(chatId);
+          setMessages(msgs);
+      } catch (error) {
+          console.error("Failed to load messages", error);
+      } finally {
+          setIsLoadingMessages(false);
+      }
+  };
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Handle send message (mock)
-  const handleSend = () => {
-    if (!inputText.trim()) return;
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      conversationId: selectedChat?.id || '0',
-      content: inputText,
-      sender: 'agent',
-      type: 'text',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'sent'
-    };
-    setMessages([...messages, newMessage]);
-    setInputText('');
+  const handleSend = async () => {
+    if (!inputText.trim() || !selectedChat) return;
+    
+    const text = inputText;
+    setInputText(''); // Optimistic clear
+
+    try {
+        const newMessage = await sendMessage(selectedChat.id, text, 'agent');
+        setMessages(prev => [...prev, newMessage]);
+        
+        // Update local conversation list order/preview
+        setConversations(prev => prev.map(c => 
+            c.id === selectedChat.id 
+            ? { ...c, lastMessage: text, updatedAt: new Date().toISOString() } 
+            : c
+        ).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
+
+    } catch (error) {
+        alert("Erro ao enviar mensagem.");
+        setInputText(text); // Restore on failure
+    }
   };
 
   const toggleMode = async () => {
@@ -92,10 +117,8 @@ const Conversations = () => {
     const newStatus = selectedChat.status === 'ai' ? 'human' : 'ai';
     
     try {
-      // Call Service (Backend)
       const updatedChat = await updateConversationStatus(selectedChat.id, newStatus);
       
-      // Update Local State
       setConversations(conversations.map(c => c.id === updatedChat.id ? updatedChat : c));
       setSelectedChat(updatedChat);
       
@@ -115,16 +138,14 @@ const Conversations = () => {
     if (!selectedChat) return;
     setIsGenerating(true);
     
-    // Construct history for AI
     const history = messages
-      .filter(m => m.conversationId === selectedChat.id)
       .map(m => `${m.sender.toUpperCase()}: ${m.content}`)
       .join('\n');
 
     try {
       const reply = await generateSmartReply(
-        "Empresa de Cobrança amigável. O cliente se chama " + selectedChat.contact.name, 
-        history
+        "Empresa de Cobrança. Cliente: " + selectedChat.contact.name, 
+        history || "Início da conversa."
       );
       
       if (reply) {
@@ -141,7 +162,6 @@ const Conversations = () => {
   const getProcessedConversations = () => {
     let result = [...conversations];
 
-    // 1. Filter
     if (searchTerm) {
       result = result.filter(c => 
         c.contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -149,23 +169,14 @@ const Conversations = () => {
       );
     }
 
-    // 2. Sort
     result.sort((a, b) => {
       switch (sortBy) {
         case 'status':
-          // Priority: Human > AI. Within Human: Recent first.
-          if (a.status === b.status) {
-             return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-          }
+          if (a.status === b.status) return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
           return a.status === 'human' ? -1 : 1;
-        
         case 'unread':
-           // Priority: Unread count desc.
-           if (a.unreadCount === b.unreadCount) {
-              return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-           }
+           if (a.unreadCount === b.unreadCount) return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
            return b.unreadCount - a.unreadCount;
-
         case 'recent':
         default:
            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
@@ -240,9 +251,11 @@ const Conversations = () => {
                 >
                 <div className="flex justify-between items-start mb-1">
                     <h4 className={`font-semibold text-sm ${selectedChat?.id === chat.id ? 'text-brand-900' : 'text-slate-900'}`}>{chat.contact.name}</h4>
-                    <span className="text-xs text-slate-400">{chat.contact.lastMessageAt}</span>
+                    <span className="text-xs text-slate-400">
+                        {new Date(chat.updatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </span>
                 </div>
-                <p className="text-xs text-slate-500 truncate mb-2">{chat.lastMessage}</p>
+                <p className="text-xs text-slate-500 truncate mb-2">{chat.lastMessage || "Iniciar conversa..."}</p>
                 <div className="flex items-center gap-2">
                     {chat.status === 'ai' ? (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-800">
@@ -250,7 +263,7 @@ const Conversations = () => {
                     </span>
                     ) : (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
-                        <User className="w-3 h-3 mr-1" /> Humano
+                        <User className="w-3 h-3 mr-1" /> HUMANO
                     </span>
                     )}
                     {chat.unreadCount > 0 && (
@@ -311,28 +324,53 @@ const Conversations = () => {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#e5ddd5] bg-opacity-10" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
-                  <div className={`max-w-[70%] rounded-2xl px-4 py-3 shadow-sm text-sm ${
-                    msg.sender === 'user' 
-                      ? 'bg-white text-slate-800 rounded-tl-none border border-slate-100' 
-                      : msg.sender === 'ai'
-                        ? 'bg-indigo-50 text-indigo-900 rounded-tr-none border border-indigo-100'
-                        : 'bg-brand-600 text-white rounded-tr-none'
-                  }`}>
-                    {msg.sender === 'ai' && (
-                        <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 mb-1 uppercase tracking-wider">
-                            <Bot className="w-3 h-3" /> Resposta Automática
-                        </div>
-                    )}
-                    <p>{msg.content}</p>
-                    <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${msg.sender === 'agent' ? 'text-brand-200' : 'text-slate-400'}`}>
-                      <span>{msg.timestamp}</span>
-                      {msg.sender !== 'user' && <CheckCheck className="w-3 h-3" />}
-                    </div>
+              {isLoadingMessages ? (
+                  <div className="flex justify-center pt-10"><Loader2 className="w-8 h-8 animate-spin text-slate-300" /></div>
+              ) : messages.length === 0 ? (
+                  <div className="text-center text-slate-400 pt-20">
+                      <MessageCircle className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                      <p className="text-sm">Nenhuma mensagem ainda.</p>
                   </div>
+              ) : (
+                  messages.map((msg) => (
+                    <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
+                    <div className={`max-w-[70%] rounded-2xl px-4 py-3 shadow-sm text-sm ${
+                        msg.sender === 'user' 
+                        ? 'bg-white text-slate-800 rounded-tl-none border border-slate-100' 
+                        : msg.sender === 'ai'
+                            ? 'bg-indigo-50 text-indigo-900 rounded-tr-none border border-indigo-100'
+                            : 'bg-brand-600 text-white rounded-tr-none'
+                    }`}>
+                        {msg.sender === 'ai' && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 mb-1 uppercase tracking-wider">
+                                <Bot className="w-3 h-3" /> Resposta Automática
+                            </div>
+                        )}
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${msg.sender === 'agent' ? 'text-brand-200' : 'text-slate-400'}`}>
+                        <span>{msg.timestamp}</span>
+                        {msg.sender !== 'user' && <CheckCheck className="w-3 h-3" />}
+                        </div>
+                    </div>
+                    </div>
+                ))
+              )}
+              
+              {/* Typing Indicator */}
+              {isGenerating && (
+                <div className="flex justify-end animate-in fade-in slide-in-from-bottom-2">
+                    <div className="bg-indigo-50 text-indigo-900 rounded-2xl rounded-tr-none border border-indigo-100 px-4 py-3 shadow-sm flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-indigo-400" />
+                        <span className="text-xs font-medium">IA digitando</span>
+                        <div className="flex gap-1">
+                            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
+                        </div>
+                    </div>
                 </div>
-              ))}
+              )}
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Input */}

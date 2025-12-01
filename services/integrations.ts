@@ -1,40 +1,20 @@
 
-import { WhatsAppConfig } from "../types";
+import { supabase } from './supabase';
+import { authService } from './auth';
+import { WhatsAppConfig, AsaasConfig } from "../types";
 
-// Simulated Local Storage Keys
-const ASAAS_KEY = 'movicobranca_asaas_key';
-const WA_CONFIG_KEY = 'movicobranca_wa_config';
 const CORS_PROXY = 'https://corsproxy.io/?';
 
-export const validateAsaasToken = async (apiKey: string): Promise<boolean> => {
+// Helper para validar Asaas com verificação estrita de ambiente
+export const validateAsaasToken = async (apiKey: string, mode: 'production' | 'sandbox' = 'production'): Promise<boolean> => {
     const cleanKey = apiKey.trim();
     if (!cleanKey) throw new Error("A chave de API não pode estar vazia.");
-
-    // Determine URL based on key prefix hint (although we test connection to be sure)
-    // Production keys usually start with $aact... Sandbox keys start with $ but are shorter/different.
-    // We'll try the URL based on the user's selected mode in the UI, but this function only gets the key.
-    // We will infer environment or try both? For simplicity, let's try based on typical format or just assume Production URL 
-    // unless the key is explicitly a "sandbox" formatted one? 
-    // Actually, to be safe, we should test against the URL that matches the key intent. 
-    // Since we don't pass mode here, we'll try Production first, then Sandbox if it fails?
-    // Better: The UI should pass the mode. But maintaining signature compatibility:
     
-    // Heuristic: Try Production first. If it's a Sandbox key, Asaas Prod returns 401.
-    // IMPORTANT: Users often mix this up. 
-    
-    // Let's assume the component calls this with the RIGHT key for the RIGHT mode.
-    // We will try to fetch customers. If it works (200), the key is good.
-    
-    let targetUrl = 'https://www.asaas.com/api/v3/customers?limit=1';
-    // If the key looks like it might be sandbox (heuristic), we could try sandbox URL, 
-    // but the best way is to let the user pick the mode in UI and we validate against that.
-    // Since we don't have mode here, we will try to detect.
-    
-    // NOTE: This validator is called by handleSaveAsaas/handleTestAsaas which knows the mode.
-    // But since we can't change the signature easily without breaking other things, let's try a generic fetch.
-    
-    // However, to make this robust:
-    // If we receive a 401 from Prod, it MIGHT be a Sandbox key.
+    const baseUrl = mode === 'sandbox' 
+        ? 'https://sandbox.asaas.com/api/v3'
+        : 'https://www.asaas.com/api/v3';
+        
+    const targetUrl = `${baseUrl}/customers?limit=1`;
     
     try {
         const response = await fetch(CORS_PROXY + encodeURIComponent(targetUrl), {
@@ -45,85 +25,173 @@ export const validateAsaasToken = async (apiKey: string): Promise<boolean> => {
             }
         });
 
-        if (response.ok) {
-            localStorage.setItem(ASAAS_KEY, cleanKey);
-            return true;
-        }
+        if (response.ok) return true;
         
-        // If Prod failed with 401, maybe it's a sandbox key?
         if (response.status === 401) {
-             // Try Sandbox URL
-             const sandboxUrl = 'https://sandbox.asaas.com/api/v3/customers?limit=1';
-             const sbResponse = await fetch(CORS_PROXY + encodeURIComponent(sandboxUrl), {
-                method: 'GET',
-                headers: {
-                    'access_token': cleanKey,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (sbResponse.ok) {
-                // It's a valid Sandbox key
-                localStorage.setItem(ASAAS_KEY, cleanKey);
-                return true;
-            }
+             throw new Error(`Chave de ${mode === 'sandbox' ? 'Sandbox' : 'Produção'} inválida ou não autorizada.`);
         }
 
-        throw new Error("Chave inválida ou não autorizada.");
-
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.errors?.[0]?.description || `Erro Asaas (${response.status}): ${response.statusText}`);
     } catch (error: any) {
         throw new Error(error.message || "Erro ao conectar com Asaas.");
     }
 };
 
 export const validateWhatsAppConnection = async (config: WhatsAppConfig): Promise<boolean> => {
-    // Basic format validation
-    if (!config.phoneNumberId || !config.accessToken) {
-        throw new Error("ID do Telefone e Token são obrigatórios.");
-    }
+    const phoneId = config.phoneNumberId?.trim();
+    const token = config.accessToken?.trim();
+
+    if (!phoneId || !token) throw new Error("Dados incompletos.");
 
     try {
-        // Real validation against Meta Graph API
-        // We query the Phone Number ID endpoint. If the token is valid, it returns the object.
-        const response = await fetch(`https://graph.facebook.com/v18.0/${config.phoneNumberId}`, {
+        const response = await fetch(`https://graph.facebook.com/v18.0/${phoneId}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${config.accessToken}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             }
         });
 
         const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || "Erro de conexão Meta.");
+        if (data.id !== phoneId) throw new Error("ID incorreto. O ID retornado pela Meta não confere.");
 
-        if (!response.ok) {
-            // Extract meaningful error message from Meta response
-            const errorMessage = data.error?.message || "Token inválido ou sem permissão para este ID.";
-            console.error("Meta API Validation Error:", data);
-            throw new Error(`Erro WhatsApp: ${errorMessage}`);
-        }
-
-        // Verify if the returned ID matches the requested ID to ensure correct access
-        if (data.id !== config.phoneNumberId) {
-            throw new Error("O ID retornado pela API não corresponde ao ID informado.");
-        }
-
-        // If successful, save config
-        localStorage.setItem(WA_CONFIG_KEY, JSON.stringify(config));
         return true;
-
     } catch (error: any) {
-        // If it's a fetch error (network) or our thrown error
-        throw new Error(error.message || "Não foi possível conectar à API do WhatsApp.");
+        throw new Error(error.message);
     }
 };
 
-export const getIntegrationStatus = () => {
-    // Check local storage or existing configs
-    const asaasConfig = localStorage.getItem('movicobranca_asaas_config');
-    const waConfig = localStorage.getItem('movicobranca_wa_config');
+// --- NOVOS MÉTODOS SUPABASE ---
+
+export const asaasService = {
+    saveConfig: async (config: AsaasConfig) => {
+        const companyId = await authService.getCompanyId();
+        if (!companyId) throw new Error("Empresa não identificada.");
+
+        // 1. Verificar se já existe configuração
+        const { data: existing } = await supabase
+            .from('integrations')
+            .select('id')
+            .eq('company_id', companyId)
+            .eq('provider', 'asaas')
+            .maybeSingle();
+
+        let error;
+
+        if (existing) {
+            // Atualizar
+            const result = await supabase
+                .from('integrations')
+                .update({
+                    config: config,
+                    is_active: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', existing.id);
+            error = result.error;
+        } else {
+            // Criar Novo
+            const result = await supabase
+                .from('integrations')
+                .insert({
+                    company_id: companyId,
+                    provider: 'asaas',
+                    config: config,
+                    is_active: true
+                });
+            error = result.error;
+        }
+
+        if (error) throw error;
+        
+        // Mantém cache local para performance imediata
+        localStorage.setItem('movicobranca_asaas_config', JSON.stringify(config));
+    },
+
+    getConfig: async (): Promise<AsaasConfig | null> => {
+        const companyId = await authService.getCompanyId();
+        if (!companyId) return null;
+
+        const { data, error } = await supabase
+            .from('integrations')
+            .select('config')
+            .eq('company_id', companyId)
+            .eq('provider', 'asaas')
+            .maybeSingle(); // maybeSingle evita erro se não existir
+
+        if (error || !data) return null;
+        return data.config as AsaasConfig;
+    },
+};
+
+export const whatsAppService = {
+    saveConfig: async (config: WhatsAppConfig) => {
+        const companyId = await authService.getCompanyId();
+        if (!companyId) throw new Error("Empresa não identificada.");
+
+        // 1. Verificar se já existe configuração
+        const { data: existing } = await supabase
+            .from('integrations')
+            .select('id')
+            .eq('company_id', companyId)
+            .eq('provider', 'whatsapp')
+            .maybeSingle();
+
+        let error;
+
+        if (existing) {
+            // Atualizar
+            const result = await supabase
+                .from('integrations')
+                .update({
+                    config: config,
+                    is_active: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', existing.id);
+            error = result.error;
+        } else {
+            // Criar Novo
+            const result = await supabase
+                .from('integrations')
+                .insert({
+                    company_id: companyId,
+                    provider: 'whatsapp',
+                    config: config,
+                    is_active: true
+                });
+            error = result.error;
+        }
+
+        if (error) throw error;
+        localStorage.setItem('movicobranca_wa_config', JSON.stringify(config));
+    },
+
+    getConfig: async (): Promise<WhatsAppConfig | null> => {
+        const companyId = await authService.getCompanyId();
+        if (!companyId) return null;
+
+        const { data, error } = await supabase
+            .from('integrations')
+            .select('config')
+            .eq('company_id', companyId)
+            .eq('provider', 'whatsapp')
+            .maybeSingle();
+
+        if (error || !data) return null;
+        return data.config as WhatsAppConfig;
+    }
+};
+
+export const getIntegrationStatus = async () => {
+    const asaas = await asaasService.getConfig();
+    const whatsapp = await whatsAppService.getConfig();
 
     return {
-        asaas: !!localStorage.getItem(ASAAS_KEY) || !!asaasConfig,
-        whatsapp: !!waConfig
+        asaas: !!asaas,
+        whatsapp: !!whatsapp,
+        connected: !!asaas || !!whatsapp
     };
 };

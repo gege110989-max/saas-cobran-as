@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -8,10 +7,8 @@ import {
   DollarSign,
   AlertCircle,
   Activity,
-  ArrowUpRight,
-  ArrowDownRight,
-  Clock,
-  Moon
+  Moon,
+  Clock
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -26,6 +23,7 @@ import {
   Legend
 } from 'recharts';
 import SystemHealth from '../../components/SystemHealth';
+import StatCard from '../../components/StatCard';
 
 // Mock Data
 const mrrGrowthData = [
@@ -45,33 +43,6 @@ const acquisitionData = [
   { name: 'Mai', new: 22, churn: 3 },
   { name: 'Jun', new: 30, churn: 2 },
 ];
-
-const StatCard = ({ title, value, badge, badgeColor, subtext, icon: Icon, color, onClick }: any) => (
-  <div 
-    onClick={onClick}
-    className={`bg-white p-6 rounded-xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-indigo-200 transition-colors' : ''}`}
-  >
-    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-slate-50 to-slate-100 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
-    <div className="relative z-10">
-      <div className="flex justify-between items-start mb-4">
-        <div className={`p-3 rounded-lg ${color} bg-opacity-10`}>
-          <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
-        </div>
-        {badge && (
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${badgeColor}`}>
-            {badge.includes('+') ? <ArrowUpRight className="w-3 h-3 mr-1" /> : <ArrowDownRight className="w-3 h-3 mr-1" />}
-            {badge}
-          </span>
-        )}
-      </div>
-      <div>
-        <h3 className="text-3xl font-bold text-slate-900 tracking-tight">{value}</h3>
-        <p className="text-sm font-medium text-slate-500 uppercase tracking-wide mt-1">{title}</p>
-        {subtext && <p className="text-xs text-slate-400 mt-2">{subtext}</p>}
-      </div>
-    </div>
-  </div>
-);
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -101,7 +72,7 @@ const AdminDashboard = () => {
           badgeColor="bg-emerald-100 text-emerald-700"
           subtext="Receita Recorrente Mensal" 
           icon={DollarSign} 
-          color="bg-emerald-500 text-emerald-600"
+          color="bg-emerald-500 text-emerald-600 bg-opacity-10"
           onClick={() => navigate('/admin/finance')}
         />
         <StatCard 
@@ -111,7 +82,7 @@ const AdminDashboard = () => {
           badgeColor="bg-indigo-100 text-indigo-700"
           subtext="Total de clientes pagantes" 
           icon={Building2} 
-          color="bg-indigo-500 text-indigo-600"
+          color="bg-indigo-500 text-indigo-600 bg-opacity-10"
           onClick={() => navigate('/admin/companies')}
         />
         <StatCard 
@@ -121,7 +92,7 @@ const AdminDashboard = () => {
           badgeColor="bg-blue-100 text-blue-700"
           subtext="Membros das equipes" 
           icon={Users} 
-          color="bg-blue-500 text-blue-600"
+          color="bg-blue-500 text-blue-600 bg-opacity-10"
           onClick={() => navigate('/admin/companies')}
         />
         <StatCard 
@@ -131,7 +102,7 @@ const AdminDashboard = () => {
           badgeColor="bg-emerald-100 text-emerald-700"
           subtext="Cancelamentos no período" 
           icon={Activity} 
-          color="bg-rose-500 text-rose-600"
+          color="bg-rose-500 text-rose-600 bg-opacity-10"
           onClick={() => navigate('/admin/finance')}
         />
       </div>
@@ -169,7 +140,6 @@ const AdminDashboard = () => {
         {/* System Health Section */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
             <div className="flex-1">
-                {/* Use the new SystemHealth component here or just the alerts if SystemHealth is large */}
                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                     <Activity className="w-5 h-5 text-emerald-600" />
                     Alertas e Saúde
@@ -241,21 +211,30 @@ const AdminDashboard = () => {
 
         {/* Key Metrics Cards */}
         <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center">
-                <p className="text-sm font-medium text-slate-500">ARPU (Ticket Médio)</p>
-                <h4 className="text-2xl font-bold text-slate-900 mt-1">R$ 241,00</h4>
-                <p className="text-xs text-emerald-600 mt-2 font-medium flex items-center"><ArrowUpRight className="w-3 h-3"/> +2.4% este mês</p>
-            </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center">
-                <p className="text-sm font-medium text-slate-500">LTV (Lifetime Value)</p>
-                <h4 className="text-2xl font-bold text-slate-900 mt-1">R$ 3.250</h4>
-                <p className="text-xs text-emerald-600 mt-2 font-medium flex items-center"><ArrowUpRight className="w-3 h-3"/> +5.1% este mês</p>
-            </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center">
-                <p className="text-sm font-medium text-slate-500">CAC Estimado</p>
-                <h4 className="text-2xl font-bold text-slate-900 mt-1">R$ 580,00</h4>
-                <p className="text-xs text-rose-600 mt-2 font-medium flex items-center"><ArrowDownRight className="w-3 h-3"/> -1.2% (Melhorou)</p>
-            </div>
+            <StatCard 
+                title="ARPU" 
+                value="R$ 241" 
+                trend="+2.4%" 
+                subtext="Ticket Médio"
+                icon={DollarSign} 
+                color="bg-white text-slate-700 border-none shadow-none"
+            />
+             <StatCard 
+                title="LTV" 
+                value="R$ 3.250" 
+                trend="+5.1%" 
+                subtext="Lifetime Value"
+                icon={TrendingUp} 
+                color="bg-white text-slate-700 border-none shadow-none"
+            />
+             <StatCard 
+                title="CAC" 
+                value="R$ 580" 
+                trend="-1.2%" 
+                subtext="Custo Aquisição"
+                icon={Users} 
+                color="bg-white text-slate-700 border-none shadow-none"
+            />
              <div className="col-span-full bg-indigo-900 p-6 rounded-xl text-white flex items-center justify-between relative overflow-hidden">
                 <div className="relative z-10">
                     <h4 className="font-bold text-lg">Forecast (Previsão)</h4>

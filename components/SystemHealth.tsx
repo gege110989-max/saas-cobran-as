@@ -7,7 +7,7 @@ import {
   Server, 
   Bot, 
   MessageSquare,
-  Clock,
+  Clock, 
   RefreshCcw
 } from 'lucide-react';
 import { getIntegrationStatus } from '../services/integrations';
@@ -87,7 +87,7 @@ const SystemHealth = () => {
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     if (service === 'whatsapp' || service === 'asaas') {
-        const config = getIntegrationStatus();
+        const config = await getIntegrationStatus();
         const isConfigured = service === 'whatsapp' ? config.whatsapp : config.asaas;
         
         setStatuses(prev => ({
