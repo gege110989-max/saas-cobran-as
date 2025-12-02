@@ -92,6 +92,23 @@ export interface CompanyUser {
   avatarUrl?: string;
 }
 
+// Novo Tipo para Planos Dinâmicos
+export interface Plan {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  interval: 'month' | 'year';
+  limits: {
+    users?: number;
+    whatsapp_messages?: number;
+    companies?: number;
+  };
+  isActive: boolean;
+  isPublic: boolean;
+  features: string[];
+}
+
 export interface SubscriptionPlan {
   name: string;
   price: number;
@@ -112,7 +129,8 @@ export interface Company {
   ownerName: string;
   email: string;
   logoUrl?: string; // Novo campo para Logomarca
-  plan: 'free' | 'pro' | 'enterprise';
+  plan: string; // Agora pode ser o nome do plano ou ID
+  planId?: string;
   status: 'active' | 'suspended' | 'trial';
   mrr: number;
   createdAt: string;

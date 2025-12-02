@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Wallet, Building2, User, Mail, Lock, CheckCircle2, Loader2, AlertCircle, Info, Image as ImageIcon } from 'lucide-react';
+import { Wallet, Building2, User, Mail, Lock, CheckCircle2, Loader2, AlertCircle, Info, Image as ImageIcon, Zap, Shield, Rocket } from 'lucide-react';
 import { authService } from '../services/auth';
 
 const SignUp = () => {
@@ -14,7 +14,8 @@ const SignUp = () => {
     userName: '',
     email: '',
     password: '',
-    logoUrl: ''
+    logoUrl: '',
+    plan: 'free'
   });
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -28,7 +29,8 @@ const SignUp = () => {
             formData.companyName,
             formData.email,
             formData.password,
-            formData.logoUrl
+            formData.logoUrl,
+            formData.plan
         );
 
         if (result.requiresConfirmation) {
@@ -48,6 +50,10 @@ const SignUp = () => {
     } finally {
         setLoading(false);
     }
+  };
+
+  const selectPlan = (plan: string) => {
+      setFormData({ ...formData, plan });
   };
 
   if (confirmationSent) {
@@ -213,6 +219,55 @@ const SignUp = () => {
                   placeholder="Mínimo de 6 caracteres"
                 />
               </div>
+            </div>
+
+            {/* Plan Selection */}
+            <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Selecione seu Plano</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <button
+                        type="button"
+                        onClick={() => selectPlan('free')}
+                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                            formData.plan === 'free' 
+                            ? 'border-brand-600 bg-brand-50 text-brand-700' 
+                            : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
+                        }`}
+                    >
+                        <Rocket className="w-5 h-5 mb-1.5" />
+                        <span className="text-xs font-bold uppercase">Starter</span>
+                        <span className="text-[10px] font-medium opacity-80">Grátis</span>
+                    </button>
+                    
+                    <button
+                        type="button"
+                        onClick={() => selectPlan('pro')}
+                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                            formData.plan === 'pro' 
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700 relative' 
+                            : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
+                        }`}
+                    >
+                        {formData.plan === 'pro' && <div className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold shadow-sm">MELHOR</div>}
+                        <Zap className="w-5 h-5 mb-1.5" />
+                        <span className="text-xs font-bold uppercase">Pro</span>
+                        <span className="text-[10px] font-medium opacity-80">R$ 297/mês</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => selectPlan('enterprise')}
+                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                            formData.plan === 'enterprise' 
+                            ? 'border-purple-600 bg-purple-50 text-purple-700' 
+                            : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
+                        }`}
+                    >
+                        <Shield className="w-5 h-5 mb-1.5" />
+                        <span className="text-xs font-bold uppercase">Enterprise</span>
+                        <span className="text-[10px] font-medium opacity-80">R$ 899/mês</span>
+                    </button>
+                </div>
             </div>
 
             <button 

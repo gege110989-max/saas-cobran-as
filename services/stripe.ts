@@ -1,4 +1,3 @@
-
 import { supabase } from './supabase';
 import { authService } from './auth';
 import { SaasInvoice } from '../types';
@@ -73,32 +72,34 @@ export const stripeService = {
    * Busca o histórico de faturas REAL do banco de dados (tabela saas_invoices)
    */
   getInvoices: async (): Promise<SaasInvoice[]> => {
-      const profile = await authService.getUserProfile();
-      if (!profile?.company_id) return [];
+      try {
+        const profile = await authService.getUserProfile();
+        if (!profile?.company_id) return [];
 
-      const { data, error } = await supabase
-          .from('saas_invoices')
-          .select('*')
-          .eq('company_id', profile.company_id)
-          .order('issue_date', { ascending: false });
+        const { data, error } = await supabase
+            .from('saas_invoices')
+            .select('*')
+            .eq('company_id', profile.company_id)
+            .order('issue_date', { ascending: false });
 
-      if (error) {
-          console.error("Erro ao buscar faturas:", error);
+        if (error) throw error;
+
+        // Mapear snake_case do banco para camelCase do frontend
+        return data.map((inv: any) => ({
+            id: inv.id,
+            companyId: inv.company_id,
+            companyName: '', // Não necessário para o tenant ver seu próprio nome
+            planName: inv.plan_name,
+            amount: inv.amount,
+            status: inv.status,
+            issueDate: new Date(inv.issue_date).toLocaleDateString('pt-BR'),
+            dueDate: new Date(inv.due_date).toLocaleDateString('pt-BR'),
+            paidAt: inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('pt-BR') : undefined,
+            pdfUrl: inv.pdf_url
+        }));
+      } catch (error) {
+          console.warn("Erro ao buscar faturas (DB Offline?):", error);
           return [];
       }
-
-      // Mapear snake_case do banco para camelCase do frontend
-      return data.map((inv: any) => ({
-          id: inv.id,
-          companyId: inv.company_id,
-          companyName: '', // Não necessário para o tenant ver seu próprio nome
-          planName: inv.plan_name,
-          amount: inv.amount,
-          status: inv.status,
-          issueDate: new Date(inv.issue_date).toLocaleDateString('pt-BR'),
-          dueDate: new Date(inv.due_date).toLocaleDateString('pt-BR'),
-          paidAt: inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('pt-BR') : undefined,
-          pdfUrl: inv.pdf_url
-      }));
   }
 };

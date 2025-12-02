@@ -53,7 +53,7 @@ export const authService = {
   },
 
   // Sign Up: Tenta criar tudo. Se falhar por falta de sessão (email confirm), avisa.
-  signUp: async (name: string, companyName: string, email: string, password: string, logoUrl?: string) => {
+  signUp: async (name: string, companyName: string, email: string, password: string, logoUrl?: string, plan: string = 'free') => {
     // 1. Create Auth User
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -87,7 +87,7 @@ export const authService = {
         .insert([
             { 
                 name: companyName, 
-                plan: 'free', 
+                plan: plan, 
                 status: 'active', 
                 owner_id: userId,
                 logo_url: logoUrl || null

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -26,7 +25,7 @@ import {
   X,
   Save
 } from 'lucide-react';
-import { Company, SaasInvoice } from '../../types';
+import { Company, SaasInvoice, Plan } from '../../types';
 import { adminService } from '../../services/admin';
 
 // --- MOCK DATA PARA EXEMPLO ---
@@ -64,12 +63,14 @@ const AdminCompanyDetails = () => {
 
   // Edit Plan State
   const [isEditingPlan, setIsEditingPlan] = useState(false);
-  const [newPlan, setNewPlan] = useState('');
+  const [availablePlans, setAvailablePlans] = useState<Plan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
 
   useEffect(() => {
     if (id) {
         loadDetails(id);
+        loadPlans();
     }
   }, [id]);
 
@@ -87,6 +88,15 @@ const AdminCompanyDetails = () => {
       }
   };
 
+  const loadPlans = async () => {
+      try {
+          const plansData = await adminService.getPlans();
+          setAvailablePlans(plansData);
+      } catch (error) {
+          console.error("Erro ao carregar planos:", error);
+      }
+  };
+
   const handleAction = (id: string) => {
       setProcessingId(id);
       setTimeout(() => setProcessingId(null), 1000);
@@ -94,19 +104,23 @@ const AdminCompanyDetails = () => {
 
   const openPlanModal = () => {
       if (company) {
-          setNewPlan(company.plan);
+          setSelectedPlanId(company.planId || '');
           setIsEditingPlan(true);
       }
   };
 
   const handleUpdatePlan = async () => {
-      if (!company || !newPlan) return;
+      if (!company || !selectedPlanId) return;
       setIsUpdatingPlan(true);
       try {
-          await adminService.updateCompanyPlan(company.id, newPlan);
-          setCompany({ ...company, plan: newPlan as 'free' | 'pro' | 'enterprise' });
+          await adminService.updateCompanyPlan(company.id, selectedPlanId);
+          
+          // Encontrar nome do plano selecionado para atualizar a UI localmente
+          const planName = availablePlans.find(p => p.id === selectedPlanId)?.name || 'Custom';
+          
+          setCompany({ ...company, plan: planName, planId: selectedPlanId });
           setIsEditingPlan(false);
-          alert(`Plano atualizado para ${newPlan.toUpperCase()} com sucesso!`);
+          alert(`Plano atualizado para ${planName} com sucesso!`);
       } catch (error) {
           console.error(error);
           alert("Erro ao atualizar o plano.");
@@ -151,13 +165,16 @@ const AdminCompanyDetails = () => {
                       <div>
                           <label className="block text-sm font-medium text-slate-700 mb-1">Selecione o Novo Plano</label>
                           <select 
-                              value={newPlan} 
-                              onChange={(e) => setNewPlan(e.target.value)}
+                              value={selectedPlanId} 
+                              onChange={(e) => setSelectedPlanId(e.target.value)}
                               className="w-full border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white p-2"
                           >
-                              <option value="free">Free (Grátis)</option>
-                              <option value="pro">Pro</option>
-                              <option value="enterprise">Enterprise</option>
+                              <option value="">Selecione...</option>
+                              {availablePlans.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                      {p.name} - R$ {p.price.toFixed(2)}/{p.interval === 'month' ? 'mês' : 'ano'}
+                                  </option>
+                              ))}
                           </select>
                       </div>
                       <div className="flex justify-end gap-2 pt-2">
@@ -169,7 +186,7 @@ const AdminCompanyDetails = () => {
                           </button>
                           <button 
                               onClick={handleUpdatePlan}
-                              disabled={isUpdatingPlan}
+                              disabled={isUpdatingPlan || !selectedPlanId}
                               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow-sm transition-colors text-sm flex items-center gap-2 disabled:opacity-70"
                           >
                               {isUpdatingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -203,10 +220,9 @@ const AdminCompanyDetails = () => {
                         <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold uppercase border border-indigo-200">{company.plan}</span>
                         <button 
                             onClick={openPlanModal}
-                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                            title="Editar Plano"
+                            className="px-2 py-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors"
                         >
-                            <Edit2 className="w-3 h-3" />
+                            Alterar Plano
                         </button>
                         <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-bold uppercase border border-emerald-200">{company.status}</span>
                     </div>

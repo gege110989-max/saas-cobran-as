@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
@@ -13,7 +14,8 @@ import {
   Sparkles,
   Loader2,
   CheckCircle2,
-  Filter
+  Filter,
+  X
 } from 'lucide-react';
 import { Conversation, Message } from '../types';
 import { generateSmartReply } from '../services/ai';
@@ -26,6 +28,7 @@ const Conversations = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   
   // Filtering & Sorting State
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,6 +52,7 @@ const Conversations = () => {
   useEffect(() => {
       if (selectedChat) {
           loadMessages(selectedChat.id);
+          setAiSuggestion(null); // Clear suggestion on chat change
       }
   }, [selectedChat?.id]);
 
@@ -121,6 +125,7 @@ const Conversations = () => {
       
       setConversations(conversations.map(c => c.id === updatedChat.id ? updatedChat : c));
       setSelectedChat(updatedChat);
+      setAiSuggestion(null);
       
       showToast(
         newStatus === 'human' 
@@ -153,6 +158,31 @@ const Conversations = () => {
       }
     } catch (error) {
       alert('Erro ao gerar resposta com IA.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handlePeekAI = async () => {
+    if (!selectedChat) return;
+    setIsGenerating(true);
+    setAiSuggestion(null);
+
+    const history = messages
+      .map(m => `${m.sender.toUpperCase()}: ${m.content}`)
+      .join('\n');
+
+    try {
+      const reply = await generateSmartReply(
+        "Você é a IA da Movicobrança. Gere a próxima resposta para este contexto, mas NÃO envie. Apenas sugira.", 
+        history || "Início da conversa."
+      );
+      
+      if (reply) {
+        setAiSuggestion(reply.trim());
+      }
+    } catch (error) {
+      showToast('Erro ao gerar sugestão.', 'error');
     } finally {
       setIsGenerating(false);
     }
@@ -361,7 +391,7 @@ const Conversations = () => {
                 <div className="flex justify-end animate-in fade-in slide-in-from-bottom-2">
                     <div className="bg-indigo-50 text-indigo-900 rounded-2xl rounded-tr-none border border-indigo-100 px-4 py-3 shadow-sm flex items-center gap-2">
                         <Bot className="w-4 h-4 text-indigo-400" />
-                        <span className="text-xs font-medium">IA digitando</span>
+                        <span className="text-xs font-medium">IA pensando...</span>
                         <div className="flex gap-1">
                             <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                             <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
@@ -376,24 +406,50 @@ const Conversations = () => {
             {/* Input */}
             <div className="p-4 bg-white border-t border-slate-200">
                 {selectedChat.status === 'ai' ? (
-                     <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-lg p-4">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-indigo-100 p-2 rounded-full">
-                                <Bot className="w-5 h-5 text-indigo-600" />
+                     <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 transition-all">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-indigo-100 p-2 rounded-full">
+                                    <Bot className="w-5 h-5 text-indigo-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-indigo-900">A IA está controlando esta conversa</p>
+                                    <p className="text-xs text-indigo-600">O cliente está sendo atendido automaticamente.</p>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-sm font-medium text-indigo-900">A IA está controlando esta conversa</p>
-                                <p className="text-xs text-indigo-600">O cliente está sendo atendido automaticamente.</p>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={handlePeekAI}
+                                    disabled={isGenerating}
+                                    className="bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 px-3 py-2 rounded-lg text-xs font-medium transition-colors shadow-sm flex items-center gap-2"
+                                >
+                                    <Sparkles className="w-3 h-3" />
+                                    Ver o que a IA diria
+                                </button>
+                                <button 
+                                    onClick={toggleMode}
+                                    disabled={isUpdatingStatus}
+                                    className="bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-lg text-xs font-medium transition-colors shadow-sm flex items-center gap-2"
+                                >
+                                    {isUpdatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : <User className="w-3 h-3" />}
+                                    Assumir conversa
+                                </button>
                             </div>
                         </div>
-                        <button 
-                            onClick={toggleMode}
-                            disabled={isUpdatingStatus}
-                            className="bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2"
-                        >
-                            {isUpdatingStatus ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
-                            Assumir conversa
-                        </button>
+                        
+                        {/* Suggestion Box */}
+                        {aiSuggestion && (
+                            <div className="mt-3 p-3 bg-white rounded border border-indigo-100 relative animate-in fade-in slide-in-from-top-1">
+                                <button 
+                                    onClick={() => setAiSuggestion(null)} 
+                                    className="absolute top-2 right-2 text-slate-300 hover:text-slate-500"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block mb-1">Sugestão da IA</span>
+                                <p className="text-sm text-slate-600 italic">"{aiSuggestion}"</p>
+                            </div>
+                        )}
                      </div>
                 ) : (
                   <div className="flex flex-col gap-2">

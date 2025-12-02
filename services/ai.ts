@@ -1,4 +1,3 @@
-
 import { supabase } from './supabase';
 
 // As chamadas agora são feitas para o backend seguro para proteger a API Key
@@ -17,7 +16,7 @@ export const classifyMessageAI = async (message: string) => {
     // O backend retorna um objeto JSON ou string JSON
     return typeof data.result === 'string' ? data.result : JSON.stringify(data.result);
   } catch (error) {
-    console.error("Erro ao classificar mensagem (AI Proxy):", error);
+    console.warn("AI Service Offline (Fallback Mode):", error);
     // Fallback gracioso para UI não quebrar se o backend falhar
     return JSON.stringify({
         intent: "Outros",
@@ -42,8 +41,8 @@ export const generateSmartReply = async (context: string, history: string, maxTo
     if (error) throw error;
     return data.result;
   } catch (error) {
-    console.error("Erro ao gerar resposta (AI Proxy):", error);
-    return null;
+    console.warn("AI Service Offline (Fallback Mode):", error);
+    return "Olá, recebi sua mensagem. Como posso ajudar? (Resposta automática de contingência)";
   }
 };
 
@@ -60,7 +59,7 @@ export const improveTemplateAI = async (currentText: string, type: string = 'col
     if (error) throw error;
     return data.result;
   } catch (error) {
-    console.error("Erro ao melhorar texto (AI Proxy):", error);
+    console.warn("AI Service Offline (Fallback Mode):", error);
     return currentText; // Retorna o texto original em caso de falha
   }
 };
@@ -77,7 +76,12 @@ export const generateCampaignStrategy = async (objective: string) => {
     if (error) throw error;
     return data.result;
   } catch (error) {
-    console.error("Erro ao gerar estratégia (AI Proxy):", error);
-    return null;
+    console.warn("AI Service Offline (Fallback Mode):", error);
+    return {
+        name: "Campanha de Exemplo (Offline)",
+        type: "promotional",
+        audienceFilter: "all",
+        messageContent: "Olá %name%, confira nossas ofertas especiais hoje!"
+    };
   }
 };
