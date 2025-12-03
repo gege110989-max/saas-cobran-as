@@ -1,22 +1,45 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Wallet, Building2, User, Mail, Lock, CheckCircle2, Loader2, AlertCircle, Info, Image as ImageIcon, Zap, Shield, Rocket } from 'lucide-react';
 import { authService } from '../services/auth';
+import { stripeService } from '../services/stripe';
+import { Plan } from '../types';
 
 const SignUp = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [isLoadingPlans, setIsLoadingPlans] = useState(true);
   const [formData, setFormData] = useState({
     companyName: '',
     userName: '',
     email: '',
     password: '',
     logoUrl: '',
-    plan: 'free'
+    plan: ''
   });
+
+  useEffect(() => {
+    loadPlans();
+  }, []);
+
+  const loadPlans = async () => {
+      try {
+          const available = await stripeService.getAvailablePlans();
+          setPlans(available);
+          if (available.length > 0) {
+              // Tenta selecionar o plano gratuito por padrão, ou o primeiro
+              const freePlan = available.find(p => p.price === 0);
+              setFormData(prev => ({ ...prev, plan: freePlan ? freePlan.id : available[0].id }));
+          }
+      } catch (e) {
+          console.error("Failed to load plans", e);
+      } finally {
+          setIsLoadingPlans(false);
+      }
+  };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,55 +247,46 @@ const SignUp = () => {
             {/* Plan Selection */}
             <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Selecione seu Plano</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <button
-                        type="button"
-                        onClick={() => selectPlan('free')}
-                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
-                            formData.plan === 'free' 
-                            ? 'border-brand-600 bg-brand-50 text-brand-700' 
-                            : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
-                        }`}
-                    >
-                        <Rocket className="w-5 h-5 mb-1.5" />
-                        <span className="text-xs font-bold uppercase">Starter</span>
-                        <span className="text-[10px] font-medium opacity-80">Grátis</span>
-                    </button>
-                    
-                    <button
-                        type="button"
-                        onClick={() => selectPlan('pro')}
-                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
-                            formData.plan === 'pro' 
-                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700 relative' 
-                            : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
-                        }`}
-                    >
-                        {formData.plan === 'pro' && <div className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold shadow-sm">MELHOR</div>}
-                        <Zap className="w-5 h-5 mb-1.5" />
-                        <span className="text-xs font-bold uppercase">Pro</span>
-                        <span className="text-[10px] font-medium opacity-80">R$ 297/mês</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => selectPlan('enterprise')}
-                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
-                            formData.plan === 'enterprise' 
-                            ? 'border-purple-600 bg-purple-50 text-purple-700' 
-                            : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
-                        }`}
-                    >
-                        <Shield className="w-5 h-5 mb-1.5" />
-                        <span className="text-xs font-bold uppercase">Enterprise</span>
-                        <span className="text-[10px] font-medium opacity-80">R$ 899/mês</span>
-                    </button>
-                </div>
+                {isLoadingPlans ? (
+                    <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+                ) : plans.length > 0 ? (
+                    <div className={`grid grid-cols-1 ${plans.length >= 3 ? 'sm:grid-cols-3' : plans.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-1'} gap-3`}>
+                        {plans.map((p, idx) => {
+                            // Simple icon assignment logic
+                            const Icon = idx === 0 ? Rocket : idx === 1 ? Zap : Shield;
+                            const isSelected = formData.plan === p.id;
+                            
+                            return (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => selectPlan(p.id)}
+                                    className={`relative flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                                        isSelected 
+                                        ? 'border-brand-600 bg-brand-50 text-brand-700' 
+                                        : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
+                                    }`}
+                                >
+                                    {p.isRecommended && <div className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold shadow-sm uppercase">Top</div>}
+                                    <Icon className={`w-5 h-5 mb-1.5 ${isSelected ? 'text-brand-600' : 'text-slate-400'}`} />
+                                    <span className="text-xs font-bold uppercase">{p.name}</span>
+                                    <span className="text-[10px] font-medium opacity-80">
+                                        {p.price === 0 ? 'Grátis' : `R$ ${p.price}/${p.interval === 'year' ? 'ano' : 'mês'}`}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="text-center p-4 bg-slate-50 rounded-lg text-sm text-slate-500 border border-dashed border-slate-200">
+                        Nenhum plano público disponível no momento.
+                    </div>
+                )}
             </div>
 
             <button 
               type="submit" 
-              disabled={loading}
+              disabled={loading || plans.length === 0}
               className="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-6 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Criar Conta e Acessar Painel'}

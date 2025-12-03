@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Building2, 
   User, 
@@ -10,6 +9,8 @@ import {
   X,
   Image as ImageIcon
 } from 'lucide-react';
+import { adminService } from '../../services/admin';
+import { Plan } from '../../types';
 
 interface CreateCompanyModalProps {
     isOpen: boolean;
@@ -23,9 +24,35 @@ export const CreateCompanyModal = ({ isOpen, onClose, onSave, isLoading }: Creat
         name: '',
         ownerName: '',
         email: '',
-        plan: 'free',
+        plan: '',
         logoUrl: ''
     });
+    const [plans, setPlans] = useState<Plan[]>([]);
+    const [isLoadingPlans, setIsLoadingPlans] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            loadPlans();
+        }
+    }, [isOpen]);
+
+    const loadPlans = async () => {
+        setIsLoadingPlans(true);
+        try {
+            const data = await adminService.getPlans();
+            const safeData = Array.isArray(data) ? data : [];
+            setPlans(safeData);
+            // Default to first plan if available and none selected
+            if (safeData.length > 0 && !formData.plan) {
+                setFormData(prev => ({ ...prev, plan: safeData[0].id }));
+            }
+        } catch (error) {
+            console.error("Erro ao carregar planos", error);
+            setPlans([]);
+        } finally {
+            setIsLoadingPlans(false);
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -112,12 +139,24 @@ export const CreateCompanyModal = ({ isOpen, onClose, onSave, isLoading }: Creat
                                 value={formData.plan}
                                 onChange={(e) => setFormData({...formData, plan: e.target.value})}
                                 className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
+                                disabled={isLoadingPlans}
                             >
-                                <option value="free">Free (Grátis)</option>
-                                <option value="pro">Pro (R$ 297/mês)</option>
-                                <option value="enterprise">Enterprise (R$ 899/mês)</option>
+                                <option value="">Selecione um plano...</option>
+                                {plans.map((plan) => (
+                                    <option key={plan.id} value={plan.id}>
+                                        {plan.name} ({plan.price === 0 ? 'Grátis' : `R$ ${plan.price}`})
+                                    </option>
+                                ))}
                             </select>
+                            {isLoadingPlans && (
+                                <div className="absolute right-3 top-3">
+                                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                </div>
+                            )}
                         </div>
+                        {plans.length === 0 && !isLoadingPlans && (
+                            <p className="text-xs text-rose-500 mt-1">Nenhum plano cadastrado no sistema.</p>
+                        )}
                     </div>
 
                     <div className="pt-4 flex gap-3">
@@ -130,7 +169,7 @@ export const CreateCompanyModal = ({ isOpen, onClose, onSave, isLoading }: Creat
                         </button>
                         <button 
                             type="submit"
-                            disabled={isLoading}
+                            disabled={isLoading || !formData.plan}
                             className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow-sm transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-70"
                         >
                             {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}

@@ -1,78 +1,106 @@
 
 import { supabase } from './supabase';
 
-/**
- * Invoca a Edge Function 'send-whatsapp' de forma segura.
- * Isso substitui a chamada direta à API da Meta no frontend.
- */
+// Helper para acessar variáveis de ambiente de forma segura
+const getEnv = () => {
+    try {
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+            // @ts-ignore
+            return import.meta.env;
+        }
+    } catch (e) {
+        console.warn("Environment variables not loaded:", e);
+    }
+    return {};
+};
+
+// URL base do Backend
+const getBaseUrl = () => {
+    const env = getEnv();
+    // Prioriza a variável de ambiente. Se não existir, usa localhost como fallback seguro.
+    return (env && env.VITE_API_URL) ? env.VITE_API_URL : 'http://localhost:8080';
+};
+
+const API_BASE = getBaseUrl();
+
+const callBackend = async (endpoint: string, body: any) => {
+    // Mapeamento de rotas do Frontend para o Backend (Cloud Run)
+    const routeMap: {[key: string]: string} = {
+        'send-whatsapp': 'api/whatsapp/send',
+        'sync-asaas-periodic': 'api/asaas/sync',
+        'generate-ai-response': 'api/ai/generate',
+        'create-checkout-session': 'api/stripe/checkout',
+        'create-portal-session': 'api/stripe/portal'
+    };
+
+    // Se o endpoint estiver no mapa, usa a rota mapeada, senão usa direto
+    const path = routeMap[endpoint] || endpoint;
+    const url = `${API_BASE}/${path}`;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token || ''}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Backend Error (${response.status}): ${errText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error(`Falha ao chamar backend (${endpoint} -> ${url}):`, error);
+        throw error;
+    }
+};
+
 export const sendWhatsAppMessage = async (to: string, templateName: string, variables: string[]) => {
   try {
-    const { data, error } = await supabase.functions.invoke('send-whatsapp', {
-      body: {
+    const data = await callBackend('send-whatsapp', {
         to,
         templateName,
         variables: variables.map(v => ({ type: "text", text: v }))
-      },
     });
-
-    if (error) throw error;
     return data;
   } catch (error) {
-    console.warn("Backend de envio indisponível (Simulação):", error);
+    console.warn("Backend indisponível (Simulação):", error);
     return { success: true, simulated: true };
   }
 };
 
-/**
- * Invoca a Edge Function 'sync-asaas-periodic' manualmente.
- * Sincroniza faturas e clientes de todas as empresas cadastradas.
- */
 export const triggerDailySync = async () => {
-  const { data, error } = await supabase.functions.invoke('sync-asaas-periodic', {
-    method: 'POST',
-  });
-
-  if (error) throw error;
-  return data;
-};
-
-/**
- * Testa a conectividade com a Edge Function na nuvem.
- * Útil para diagnóstico.
- */
-export const pingBackend = async () => {
   try {
-    // Tenta invocar a função. Se ela existir, deve responder (mesmo que 400/405).
-    const { data, error } = await supabase.functions.invoke('asaas-webhook', {
-      method: 'POST',
-      body: { event: 'PING' }
-    });
-    
-    // Se der erro de conexão (fetch failed), o SDK joga erro.
-    // Se der erro de aplicação (ex: 400), o SDK retorna error object.
-    
-    if (error) {
-       console.log("Ping com erro (esperado para payload teste):", error);
-       // Consideramos online se respondeu, mesmo com erro de validação
-       return { online: true, message: "Servidor Respondeu (Online)" };
-    }
-    
-    return { online: true, message: "Servidor Online" };
-  } catch (e: any) {
-    // Tratamento gracioso para não quebrar a UI
-    console.error("Ping falhou:", e);
-    return { online: false, message: "Offline / Não Deployado" };
+      return await callBackend('sync-asaas-periodic', {});
+  } catch (e) {
+      console.error("Sync manual falhou", e);
+      throw e;
   }
 };
 
-/**
- * Retorna a URL pública para configurar no Asaas.
- * (Apenas informativa para exibir na tela de configurações)
- */
+export const pingBackend = async () => {
+  try {
+    const url = `${API_BASE}/`; 
+    const response = await fetch(url, { method: 'GET' });
+    
+    if (response.ok) {
+       return { online: true, message: "Servidor Online" };
+    }
+    throw new Error("Status " + response.status);
+  } catch (e: any) {
+    return { online: false, message: "Offline" };
+  }
+};
+
 export const getWebhookUrl = (functionName: string) => {
-  // A URL padrão do Supabase Edge Functions
-  // Você deve substituir 'igfdxsnnlliuxrghhxma' pelo ID real do projeto se mudar
-  // Em produção, isso pode vir de import.meta.env.VITE_SUPABASE_URL se formatado corretamente
-  const PROJECT_REF = 'igfdxsnnlliuxrghhxma'; 
-  return `https://${PROJECT_REF}.supabase.co/functions/v1/${functionName}`;
+  if (functionName.includes('asaas')) return `${API_BASE}/webhook/asaas`;
+  if (functionName.includes('whatsapp')) return `${API_BASE}/webhook/whatsapp`;
+  return `${API_BASE}/${functionName}`;
 };

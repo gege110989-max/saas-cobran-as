@@ -34,10 +34,15 @@ const PrivateRoute = () => {
   const [session, setSession] = useState<any>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Auth check failed:", error);
+        setLoading(false);
+      });
 
     const {
       data: { subscription },
@@ -84,10 +89,15 @@ const PublicRoute = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Auth check failed:", error);
+        setLoading(false);
+      });
   }, []);
 
   if (loading) return null;

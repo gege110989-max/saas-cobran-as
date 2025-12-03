@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { 
@@ -35,20 +36,20 @@ const Sidebar = () => {
     {
       title: null,
       items: [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+        { icon: LayoutDashboard, label: 'Dashboard', path: '/', id: 'tour-dashboard' },
       ]
     },
     {
       title: 'INTEGRAÇÕES',
       items: [
-        { icon: Plug, label: 'Canais (Asaas/WA)', path: '/integrations' },
+        { icon: Plug, label: 'Canais (Asaas/WA)', path: '/integrations', id: 'tour-integrations' },
       ]
     },
     {
       title: 'COBRANÇAS',
       items: [
         // Unified Link
-        { icon: Settings2, label: 'Configurações', path: '/billing' },
+        { icon: Settings2, label: 'Configurações', path: '/billing', id: 'tour-billing' },
         { icon: Contact, label: 'Contatos', path: '/contacts' },
       ]
     },
@@ -62,7 +63,7 @@ const Sidebar = () => {
       title: 'ATENDIMENTO',
       items: [
         { icon: MessageSquareText, label: 'Conversas', path: '/conversations' },
-        { icon: Bot, label: 'IA Financeira', path: '/ai-config' },
+        { icon: Bot, label: 'IA Financeira', path: '/ai-config', id: 'tour-ai' },
         { icon: Workflow, label: 'Automação', path: '/automation' },
       ]
     },
@@ -100,6 +101,7 @@ const Sidebar = () => {
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  id={item.id}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 text-sm ${
                       isActive

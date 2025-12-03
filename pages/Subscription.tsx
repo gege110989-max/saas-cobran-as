@@ -1,10 +1,17 @@
-
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Check, Sparkles, AlertTriangle, Shield, Zap, Building2, Loader2, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { CreditCard, Check, Sparkles, Loader2, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import { stripeService } from '../services/stripe';
+import { Plan } from '../types';
 
-const PlanCard = ({ title, price, features, current, recommended, onSubscribe, loading }: any) => {
-    const isRecommended = recommended && !current;
+interface PlanCardProps {
+  plan: Plan;
+  current: boolean;
+  onSubscribe: () => void;
+  loading: boolean;
+}
+
+const PlanCard: React.FC<PlanCardProps> = ({ plan, current, onSubscribe, loading }) => {
+    const isRecommended = plan.isRecommended && !current;
     
     return (
     <div className={`relative p-8 rounded-3xl border flex flex-col h-full transition-all duration-300 ${
@@ -31,25 +38,25 @@ const PlanCard = ({ title, price, features, current, recommended, onSubscribe, l
         <div className="mb-8 mt-2">
             <h3 className={`text-lg font-bold uppercase tracking-wide mb-4 ${
                 current ? 'text-emerald-700' : isRecommended ? 'text-indigo-600' : 'text-slate-500'
-            }`}>{title}</h3>
+            }`}>{plan.name}</h3>
             
             <div className="flex items-baseline text-slate-900">
-                <span className="text-5xl font-extrabold tracking-tight">R$ {price}</span>
-                <span className="ml-2 text-lg font-medium text-slate-400">/mês</span>
+                <span className="text-5xl font-extrabold tracking-tight">
+                    {plan.price === 0 ? 'Grátis' : `R$ ${plan.price}`}
+                </span>
+                {plan.price > 0 && (
+                    <span className="ml-2 text-lg font-medium text-slate-400">/{plan.interval === 'year' ? 'ano' : 'mês'}</span>
+                )}
             </div>
             <p className="mt-4 text-sm text-slate-500 leading-relaxed min-h-[40px]">
-                {price === "0" 
-                    ? "Para quem está começando a organizar as cobranças." 
-                    : title === "Pro" 
-                        ? "O favorito para empresas em crescimento acelerado." 
-                        : "Potência máxima e suporte dedicado para grandes operações."}
+                {plan.description || "Plano ideal para o crescimento da sua empresa."}
             </p>
         </div>
 
         <div className="flex-1 mb-8">
             <div className="h-px bg-slate-100 mb-6"></div>
             <ul className="space-y-4">
-                {features.map((feature: string, idx: number) => (
+                {plan.features?.map((feature: string, idx: number) => (
                     <li key={idx} className="flex items-start">
                         <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${
                             current ? 'bg-emerald-100 text-emerald-600' : isRecommended ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
@@ -85,40 +92,50 @@ const PlanCard = ({ title, price, features, current, recommended, onSubscribe, l
 )};
 
 const Subscription = () => {
-  const [currentPlan, setCurrentPlan] = useState<string>('free');
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [currentPlanName, setCurrentPlanName] = useState<string>('free'); // Using Plan Name as identifier for simplicity or use Plan ID in real app
   const [loading, setLoading] = useState(true);
-  const [processingPlan, setProcessingPlan] = useState<string | null>(null);
+  const [processingPlanId, setProcessingPlanId] = useState<string | null>(null);
 
   useEffect(() => {
-      loadSubscription();
+      loadData();
   }, []);
 
-  const loadSubscription = async () => {
+  const loadData = async () => {
       try {
-          const sub = await stripeService.getCurrentSubscription();
-          if (sub) setCurrentPlan(sub.plan);
+          const [plansData, subData] = await Promise.all([
+              stripeService.getAvailablePlans(),
+              stripeService.getCurrentSubscription()
+          ]);
+          setPlans(plansData || []);
+          if (subData) setCurrentPlanName(subData.plan);
       } catch (error) {
-          console.error("Erro ao carregar plano", error);
+          console.error("Erro ao carregar planos", error);
       } finally {
           setLoading(false);
       }
   };
 
-  const handleSubscribe = async (plan: 'pro' | 'enterprise') => {
-      setProcessingPlan(plan);
+  const handleSubscribe = async (planId: string) => {
+      setProcessingPlanId(planId);
       try {
-          await stripeService.createCheckoutSession(plan);
+          await stripeService.createCheckoutSession(planId);
       } catch (error) {
-          alert("Erro ao processar pagamento.");
+          alert("Erro ao processar pagamento. Tente novamente.");
       } finally {
-          setProcessingPlan(null);
+          setProcessingPlanId(null);
       }
   };
 
   const handleManage = async () => {
-      setProcessingPlan('manage');
-      await stripeService.createPortalSession();
-      setProcessingPlan(null);
+      setProcessingPlanId('manage');
+      try {
+        await stripeService.createPortalSession();
+      } catch(e) {
+          alert("Erro ao abrir portal.");
+      } finally {
+        setProcessingPlanId(null);
+      }
   };
 
   if (loading) {
@@ -139,60 +156,28 @@ const Subscription = () => {
         </p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-8 px-4 items-start pt-8">
-          {/* FREE */}
-          <PlanCard 
-            title="Starter" 
-            price="0" 
-            current={currentPlan === 'free'}
-            features={[
-                'Até 50 clientes',
-                'Cobrança básica (E-mail)',
-                'Integração Asaas',
-                'Painel de Gestão',
-                'Sem automação de WhatsApp'
-            ]}
-            onSubscribe={() => {}} // Free is default
-            loading={false}
-          />
+      {plans.length === 0 ? (
+          <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200 mx-4">
+              <AlertCircle className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-slate-500">Nenhum plano disponível no momento.</p>
+          </div>
+      ) : (
+          <div className="grid md:grid-cols-3 gap-8 px-4 items-start pt-8">
+              {plans.map((plan) => (
+                  <PlanCard 
+                    key={plan.id}
+                    plan={plan}
+                    // Comparison logic: If plan name matches current subscription name. 
+                    // ideally use plan IDs, but legacy uses names.
+                    current={plan.name.toLowerCase() === currentPlanName?.toLowerCase()}
+                    onSubscribe={() => handleSubscribe(plan.id)}
+                    loading={processingPlanId === plan.id}
+                  />
+              ))}
+          </div>
+      )}
 
-          {/* PRO */}
-          <PlanCard 
-            title="Pro" 
-            price="297" 
-            current={currentPlan === 'pro'}
-            recommended={true}
-            features={[
-                'Clientes Ilimitados',
-                'Cobrança via WhatsApp Oficial',
-                'IA Financeira (Gemini)',
-                'Régua de Cobrança Automática',
-                'Dashboard Avançado',
-                'Suporte Prioritário'
-            ]}
-            onSubscribe={() => handleSubscribe('pro')}
-            loading={processingPlan === 'pro'}
-          />
-
-          {/* ENTERPRISE */}
-          <PlanCard 
-            title="Enterprise" 
-            price="899" 
-            current={currentPlan === 'enterprise'}
-            features={[
-                'Tudo do plano Pro',
-                'Múltiplos usuários (Equipe)',
-                'API Dedicada',
-                'Gerente de Contas',
-                'Treinamento de IA personalizado',
-                'SLA de 99.9%'
-            ]}
-            onSubscribe={() => handleSubscribe('enterprise')}
-            loading={processingPlan === 'enterprise'}
-          />
-      </div>
-
-      {currentPlan !== 'free' && (
+      {currentPlanName !== 'free' && (
           <div className="bg-slate-900 rounded-2xl p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl mx-4 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 -translate-y-1/2 translate-x-1/2"></div>
               <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 translate-y-1/2 -translate-x-1/2"></div>
@@ -208,10 +193,10 @@ const Subscription = () => {
               </div>
               <button 
                 onClick={handleManage}
-                disabled={!!processingPlan}
+                disabled={!!processingPlanId}
                 className="relative z-10 bg-white text-slate-900 px-6 py-3 rounded-xl font-bold hover:bg-slate-100 transition-colors shadow-lg flex items-center gap-2 disabled:opacity-70 group"
               >
-                  {processingPlan === 'manage' ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Acessar Portal <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></>}
+                  {processingPlanId === 'manage' ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Acessar Portal <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></>}
               </button>
           </div>
       )}
